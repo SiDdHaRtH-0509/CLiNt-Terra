@@ -16,7 +16,9 @@ app.get('/', (req, res) => {
   res.json({
     status: 'online',
     message: 'CLiNt Terra backend API is running successfully.',
-    founder: 'Siddharth Gopal Dubey'
+    founder: 'Siddharth Gopal Dubey',
+    geminiActive: !!process.env.GEMINI_API_KEY,
+    emailActive: !!(process.env.RESEND_API_KEY || (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD))
   });
 });
 

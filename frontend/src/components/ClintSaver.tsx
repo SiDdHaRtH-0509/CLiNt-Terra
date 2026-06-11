@@ -25,17 +25,47 @@ export default function ClintSaver({ stats, ledger }: ClintSaverProps) {
   // API Key States
   const [showKeyInput, setShowKeyInput] = useState(false);
   const [userApiKey, setUserApiKey] = useState('');
+  const [isServerGeminiActive, setIsServerGeminiActive] = useState(false);
   
   // Floating Thinking Bubbles State
   const [bubbles, setBubbles] = useState<Array<{ id: number; left: number; size: number; duration: number }>>([]);
   
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  // Load API Key on mount
+  const getBackendUrl = () => {
+    if (process.env.NEXT_PUBLIC_BACKEND_URL) {
+      return process.env.NEXT_PUBLIC_BACKEND_URL;
+    }
+    if (typeof window !== 'undefined') {
+      const isLocal = window.location.hostname.includes('localhost') || window.location.hostname.includes('127.0.0.1');
+      if (!isLocal) {
+        return 'https://clint-terra.onrender.com';
+      }
+    }
+    return '';
+  };
+
+  // Load API Key on mount and check server status
   useEffect(() => {
     if (typeof window !== 'undefined') {
       setUserApiKey(localStorage.getItem('gemini_api_key') || '');
     }
+
+    const checkStatus = async () => {
+      try {
+        const backendUrl = getBackendUrl();
+        const res = await fetch(`${backendUrl}/`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.geminiActive) {
+            setIsServerGeminiActive(true);
+          }
+        }
+      } catch (e) {
+        console.error('Failed to fetch backend status:', e);
+      }
+    };
+    checkStatus();
   }, []);
 
   // Emit thinking bubbles periodically when chat is closed
@@ -104,7 +134,8 @@ export default function ClintSaver({ stats, ledger }: ClintSaverProps) {
 
     try {
       // Send chat payload to backend API
-      const res = await fetch('/api/chat', {
+      const backendUrl = getBackendUrl();
+      const res = await fetch(`${backendUrl}/api/chat`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -210,7 +241,7 @@ export default function ClintSaver({ stats, ledger }: ClintSaverProps) {
                   CLiNt-Saver v1.1.2
                 </span>
                 <span className="text-[9px] text-neutral-500 font-semibold">
-                  {userApiKey ? 'Mode: LIVE GEMINI AI' : 'Mode: LOCAL TERMINAL CACHE'}
+                  {(userApiKey || isServerGeminiActive) ? 'Mode: LIVE GEMINI AI' : 'Mode: LOCAL TERMINAL CACHE'}
                 </span>
               </div>
             </div>
@@ -301,7 +332,7 @@ export default function ClintSaver({ stats, ledger }: ClintSaverProps) {
             ))}
             
             {/* API Key Prompt Banner */}
-            {!userApiKey && (
+            {(!userApiKey && !isServerGeminiActive) && (
               <div className="bg-amber-500/10 border border-amber-500/30 text-amber-600 dark:text-amber-400 p-3 rounded-lg text-[10px] space-y-1.5 self-center w-full max-w-[90%] my-1 font-sans">
                 <div className="font-semibold flex items-center gap-1.5 uppercase tracking-wider text-[9px]">
                   ⚠️ LIVE GEMINI AI MODE INACTIVE

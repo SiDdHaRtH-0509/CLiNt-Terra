@@ -12,6 +12,19 @@ interface AuthGateProps {
 }
 
 export default function AuthGate({ onAuthenticate }: AuthGateProps) {
+  const getBackendUrl = () => {
+    if (process.env.NEXT_PUBLIC_BACKEND_URL) {
+      return process.env.NEXT_PUBLIC_BACKEND_URL;
+    }
+    if (typeof window !== 'undefined') {
+      const isLocal = window.location.hostname.includes('localhost') || window.location.hostname.includes('127.0.0.1');
+      if (!isLocal) {
+        return 'https://clint-terra.onrender.com';
+      }
+    }
+    return '';
+  };
+
   const [isLogin, setIsLogin] = useState(true);
   const [isForgotPassword, setIsForgotPassword] = useState(false);
   const [name, setName] = useState('');
@@ -178,7 +191,8 @@ export default function AuthGate({ onAuthenticate }: AuthGateProps) {
 
     try {
       setLoadingStage("Dispatching recovery transmission...");
-      const res = await fetch('/api/send-email', {
+      const backendUrl = getBackendUrl();
+      const res = await fetch(`${backendUrl}/api/send-email`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

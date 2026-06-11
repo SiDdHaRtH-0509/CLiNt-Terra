@@ -36,6 +36,19 @@ import {
 import confetti from 'canvas-confetti';
 
 export default function Dashboard() {
+  const getBackendUrl = () => {
+    if (process.env.NEXT_PUBLIC_BACKEND_URL) {
+      return process.env.NEXT_PUBLIC_BACKEND_URL;
+    }
+    if (typeof window !== 'undefined') {
+      const isLocal = window.location.hostname.includes('localhost') || window.location.hostname.includes('127.0.0.1');
+      if (!isLocal) {
+        return 'https://clint-terra.onrender.com';
+      }
+    }
+    return '';
+  };
+
   const [ledger, setLedger] = useState<LedgerEntry[]>([]);
   const [stats, setStats] = useState<LedgerStats>({
     totalCarbon: 0,
@@ -277,7 +290,8 @@ export default function Dashboard() {
     const savedResendKey = localStorage.getItem('resend_api_key') || '';
 
     try {
-      await fetch('/api/send-email', {
+      const backendUrl = getBackendUrl();
+      await fetch(`${backendUrl}/api/send-email`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
