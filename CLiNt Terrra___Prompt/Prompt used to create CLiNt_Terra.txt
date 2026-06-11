@@ -1,0 +1,43 @@
+# CLiNt Terra - Prompted on Antigravity
+
+Build a state-of-the-art Carbon Management and Sustainability Intelligence platform named "CLiNt Terra". Organize the project as a clean monorepo with an Express backend and a Next.js frontend, ensuring the entire application feels premium, interactive, and alive.
+
+---
+
+## 1. Monorepo Architecture & API Routing
+* **Directory Separation**: Create a `frontend/` folder for the Next.js React UI and a `backend/` folder for the Node.js/Express server.
+* **Orchestration**: Provide a root `package.json` that uses `concurrently` so running `npm run dev` starts the frontend (port 3000) and backend (port 5000) simultaneously.
+* **API Proxy**: Configure rewrites in `frontend/next.config.ts` to redirect all `/api/:path*` traffic seamlessly to the Express server at `http://localhost:5000/api/:path*`.
+
+---
+
+## 2. Interactive Auth Gate & 3D WebGL Galaxy
+* **Immersive Space Galaxy**: Build a 3D WebGL particle system using React Three Fiber. In dark mode, render a swirling cosmic galaxy with thousands of glowing stars surrounding a volumetric central star.
+* **Anti-Clipping Volumetric Center**: Ensure the galaxy's core mesh uses `depthWrite={false}` and additive blending so star particles behind the core do not clip or create dark circle cutouts.
+* **Dual-Theme Optimization**: 
+  * In dark mode, display bright neon cosmic stardust.
+  * In light mode, swap to normal blending (`THREE.NormalBlending`) with rich watercolor tones (indigo, magenta, royal blue) against a subtle violet particle cloud for visibility on light backgrounds.
+* **Asymmetric Layout**: Shift the login/signup card to the right side of the screen (`lg:justify-end`) on desktop. Shift the WebGL galaxy center to the left so it remains fully visible to the user.
+
+---
+
+## 3. Main Dashboard Features
+* **Carbon Twin 3D**: Create an interactive 3D WebGL digital twin canvas depicting the Earth and its moon, tracking carbon data coordinates.
+* **Pipeline Flow**: Render an animated telemetry layout showing carbon capture and processing node connections.
+* **Ledger Tables**: Build clean, search-friendly datagrids to monitor transaction ledger histories and carbon credit certifications.
+* **Email Lifecycle Center**: Provide a control deck UI allowing users to manually send automated updates, welcome newsletters, or welcome-back messages.
+
+---
+
+## 4. Floating AI Copilot ("CLiNt")
+* **Floating & Thinking Animations**: Place a circular AI companion widget at the bottom right.
+  * When closed, make the logo hover up and down smoothly using vertical floating keyframes.
+  * Emit custom semi-transparent, rising "cloudy thinking bubbles" that drift upwards from the widget.
+* **Gemini AI Integration**: Wire the copilot to the Express `/api/chat` route connected to the Gemini Pro API.
+* **Offline Fallback Cache**: Implement a local heuristic question-and-answer cache on the server so that the assistant returns instant, intelligent answers even when offline or during rate limit intervals.
+
+---
+
+## 5. Walkthrough Tour & Email Automation
+* **Gated Tour Walkthrough**: Include a step-by-step interactive onboarding tour. Lift the state to the parent application so the tour prompt modal is triggered only during new registrations (Signups) and is bypassed completely during logins.
+* **SMTP & Resend Email Engine**: Implement an Express `/api/send-email` router using Nodemailer and Resend API integrations to dispatch rich welcome messages when users join.
