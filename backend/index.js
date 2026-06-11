@@ -11,6 +11,15 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Health Check Route
+app.get('/', (req, res) => {
+  res.json({
+    status: 'online',
+    message: 'CLiNt Terra backend API is running successfully.',
+    founder: 'Siddharth Gopal Dubey'
+  });
+});
+
 // Copilot Chat Route
 app.post('/api/chat', async (req, res) => {
   try {
