@@ -13,6 +13,7 @@ interface AuthGateProps {
 
 export default function AuthGate({ onAuthenticate }: AuthGateProps) {
   const [isLogin, setIsLogin] = useState(true);
+  const [isForgotPassword, setIsForgotPassword] = useState(false);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -21,6 +22,7 @@ export default function AuthGate({ onAuthenticate }: AuthGateProps) {
   const [loading, setLoading] = useState(false);
   const [loadingStage, setLoadingStage] = useState('');
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -112,6 +114,107 @@ export default function AuthGate({ onAuthenticate }: AuthGateProps) {
     }, 1200);
   };
 
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
+    if (!email) return;
+
+    if (typeof window === 'undefined') return;
+
+    const usersStr = localStorage.getItem('clint_terra_users');
+    let users = usersStr ? JSON.parse(usersStr) : [];
+    
+    // Seed default founder account if empty, to allow resetting founder account password
+    if (users.length === 0) {
+      users = [
+        {
+          name: 'Siddharth Gopal Dubey',
+          email: 'siddharth@dubey.me',
+          password: 'password'
+        }
+      ];
+      localStorage.setItem('clint_terra_users', JSON.stringify(users));
+    }
+
+    const userMatch = users.find((u: any) => u.email.toLowerCase() === email.toLowerCase());
+    if (!userMatch) {
+      setError("Email address not registered in the cryptographic twin database.");
+      return;
+    }
+
+    setLoading(true);
+    setLoadingStage("Resolving cryptographic key pairs...");
+
+    const subject = "CLiNt Terra: Cryptographic Passphrase Recovery";
+    const htmlBody = `
+      <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 25px; background-color: #f8f9fa; border: 1px solid #dadce0; color: #202124; border-radius: 12px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #dadce0; padding-bottom: 15px; margin-bottom: 20px;">
+          <h2 style="color: #202124; margin: 0; font-family: sans-serif; font-weight: bold;">CLiNt Terra</h2>
+          <span style="font-size: 10px; color: #5f6368; font-family: monospace;">PASSPHRASE RECOVERY</span>
+        </div>
+        <h1 style="color: #202124; font-size: 20px; margin-bottom: 10px; font-weight: bold;">Passphrase Recovery Request</h1>
+        <p style="color: #5f6368; font-size: 14px; line-height: 1.6;">
+          Hello ${userMatch.name},<br/><br/>
+          A passphrase recovery request was triggered for your CLiNt Terra carbon account.
+        </p>
+        <div style="background-color: #ffffff; border: 1px solid #dadce0; padding: 15px; border-radius: 8px; margin: 20px 0; font-family: monospace; font-size: 12px; text-align: center;">
+          <span style="color: #5f6368; display: block; margin-bottom: 5px; text-transform: uppercase; font-size: 10px;">Your Registered Passphrase:</span>
+          <strong style="color: #d93025; font-size: 18px; letter-spacing: 1px;">${userMatch.password}</strong>
+        </div>
+        <p style="color: #5f6368; font-size: 13px; line-height: 1.6;">
+          You can now return to the login interface, input your email, and enter the passphrase above to re-establish your secure biome session.
+        </p>
+        <div style="border-top: 1px solid #dadce0; padding-top: 15px; font-size: 10px; color: #70757a; text-align: center; font-family: monospace; margin-top: 30px;">
+          CLiNt Terra was founded and envisioned by Siddharth Gopal Dubey.
+        </div>
+      </div>
+    `;
+
+    // Retrieve credentials directly from local storage if any, or backend env fallback
+    const savedGmailUser = localStorage.getItem('gmail_user') || '';
+    const savedGmailAppPass = localStorage.getItem('gmail_app_password') || '';
+    const savedResendKey = localStorage.getItem('resend_api_key') || '';
+
+    try {
+      setLoadingStage("Dispatching recovery transmission...");
+      const res = await fetch('/api/send-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          recipient: email,
+          subject,
+          html: htmlBody,
+          credentials: {
+            gmailUser: savedGmailUser,
+            gmailAppPassword: savedGmailAppPass,
+            resendApiKey: savedResendKey
+          }
+        })
+      });
+
+      const data = await res.json();
+      setLoading(false);
+
+      if (data.success || data.warning) {
+        setSuccess(`Passphrase recovery email dispatched to ${email}. Check your inbox!`);
+        confetti({
+          particleCount: 50,
+          spread: 60,
+          origin: { y: 0.8 },
+          colors: ['#00ff66', '#ffffff']
+        });
+      } else {
+        setError("Failed to dispatch email. Server returned: " + (data.warning || "Unknown failure."));
+      }
+
+    } catch (e: any) {
+      console.error('SMTP recovery dispatch failed', e);
+      setLoading(false);
+      setError("Handshake error: Failed to establish link to mail dispatch worker.");
+    }
+  };
+
   return (
     <div className="min-h-screen bg-black text-neutral-200 flex items-center justify-center lg:justify-end lg:pr-[12%] p-4 relative scanline">
       {/* 3D Space Background */}
@@ -144,6 +247,66 @@ export default function AuthGate({ onAuthenticate }: AuthGateProps) {
               <p className="text-[11px] text-neutral-400 animate-pulse">{loadingStage}</p>
             </div>
           </div>
+        ) : isForgotPassword ? (
+          <form onSubmit={handleResetPassword} className="space-y-5">
+            <div className="border-b border-neutral-900 pb-3">
+              <h2 className="text-xs font-mono text-white uppercase tracking-wider">Recover Passphrase</h2>
+              <p className="text-[10px] text-neutral-500 font-mono mt-1 leading-normal">
+                Enter your registered email address to dispatch your secure passphrase recovery transmission.
+              </p>
+            </div>
+
+            {/* Error Message Box */}
+            {error && (
+              <div className="p-3 rounded-lg border border-red-500/20 bg-red-500/5 text-red-500 text-xs font-mono">
+                {error}
+              </div>
+            )}
+
+            {/* Success Message Box */}
+            {success && (
+              <div className="p-3 rounded-lg border border-green-500/20 bg-green-500/5 text-[#00ff66] text-xs font-mono flex items-start gap-1.5">
+                <CheckCircle className="w-4 h-4 text-[#00ff66] shrink-0 mt-0.5" />
+                <span>{success}</span>
+              </div>
+            )}
+
+            {/* Email Input */}
+            <div className="space-y-1">
+              <label className="text-[10px] font-mono text-neutral-500 uppercase">Email Address</label>
+              <div className="relative">
+                <Mail className="absolute left-3 top-2.5 w-4 h-4 text-neutral-500" />
+                <input
+                  type="email"
+                  placeholder="name@domain.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  className="w-full pl-9 pr-4 py-2 text-xs font-mono bg-neutral-950/80 border border-neutral-900 focus:border-neutral-800 rounded-lg text-neutral-200 outline-none transition-all"
+                />
+              </div>
+            </div>
+
+            {/* Submit Button */}
+            <button
+              type="submit"
+              className="w-full py-2.5 text-xs font-mono text-black font-semibold bg-[#00ff66] hover:bg-[#55ff99] rounded-lg transition-all shadow-[0_0_15px_rgba(0,255,102,0.15)] hover:shadow-[0_0_20px_rgba(0,255,102,0.3)] cursor-pointer text-center flex items-center justify-center gap-1.5"
+            >
+              <Shield className="w-3.5 h-3.5" />
+              Transmit Recovery Signal
+            </button>
+
+            {/* Return Link */}
+            <div className="text-center pt-2">
+              <button
+                type="button"
+                onClick={() => { setIsForgotPassword(false); setError(''); setSuccess(''); }}
+                className="text-[10px] font-mono text-[#00ff66] hover:underline cursor-pointer"
+              >
+                &larr; Back to Access Twin Ledger
+              </button>
+            </div>
+          </form>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-5">
             {/* Toggle */}
@@ -236,6 +399,17 @@ export default function AuthGate({ onAuthenticate }: AuthGateProps) {
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
+                {isLogin && (
+                  <div className="flex justify-end pt-1">
+                    <button
+                      type="button"
+                      onClick={() => { setIsForgotPassword(true); setError(''); setSuccess(''); }}
+                      className="text-[10px] font-mono text-neutral-500 hover:text-[var(--neon-green)] transition-colors cursor-pointer"
+                    >
+                      Forgot passphrase?
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
 
