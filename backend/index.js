@@ -25,9 +25,9 @@ app.post('/api/chat', async (req, res) => {
   try {
     const { message, stats, ledgerSummary } = req.body;
     
-    // Retrieve key from headers or env fallback
+    // Retrieve key from env or header fallback
     const userApiKey = req.get('x-api-key') || '';
-    const apiKey = userApiKey || process.env.GEMINI_API_KEY || '';
+    const apiKey = process.env.GEMINI_API_KEY || userApiKey || '';
     const genAI = apiKey ? new GoogleGenerativeAI(apiKey) : null;
 
     const systemPrompt = `You are CLiNt-Saver, the dedicated personal sustainability AI copilot for the CLiNt Terra platform.
@@ -89,9 +89,9 @@ app.post('/api/send-email', async (req, res) => {
       return res.status(400).json({ error: 'Recipient is required' });
     }
 
-    const resendApiKey = credentials?.resendApiKey || process.env.RESEND_API_KEY || '';
-    const gmailUser = credentials?.gmailUser || process.env.GMAIL_USER || '';
-    const gmailAppPassword = credentials?.gmailAppPassword || process.env.GMAIL_APP_PASSWORD || '';
+    const resendApiKey = process.env.RESEND_API_KEY || credentials?.resendApiKey || '';
+    const gmailUser = process.env.GMAIL_USER || credentials?.gmailUser || '';
+    const gmailAppPassword = process.env.GMAIL_APP_PASSWORD || credentials?.gmailAppPassword || '';
 
     // 1. Deliver via Resend if API Key provided
     if (resendApiKey) {
