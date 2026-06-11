@@ -3,6 +3,9 @@
 > **Carbon Intelligence & Sustainability Hub**  
 > An immersive, AI-powered carbon ledger and sustainability dashboard featuring interactive 3D visualizations, automated lifecycle communication engines, and an intelligent co-pilot.
 
+🌐 **Live Website**: [https://clint-terra.vercel.app](https://clint-terra.vercel.app)  
+⚙️ **Backend Service**: [https://clint-terra.onrender.com](https://clint-terra.onrender.com)
+
 ---
 
 ## ✨ Key Features
@@ -14,6 +17,7 @@
 - **🔗 Emissions Pipeline Flow**: Visually engaging flowchart node graph representing carbon processing stages.
 - **✉️ Email Lifecycle Center**: Complete automated mail engine to manage, schedule, and send welcome or lifecycle status updates (powered by Express, Nodemailer, and Resend).
 - **🧭 Gated Onboarding Walkthrough**: Step-by-step user onboarding tour designed to only prompt new sign-ups, keeping login seamless.
+- **🛡️ Passphrase Recovery Flow**: Secure client-to-server credentials reset routine that emails user passwords directly to their inbox on demand.
 
 ---
 
@@ -89,5 +93,27 @@ GMAIL_APP_PASSWORD=your_gmail_app_password
 
 ---
 
-## 🤖 Prompted on Antigravity
-This project was co-created and optimized using **Antigravity**, a next-generation agentic coding assistant by Google DeepMind.
+## 🤖 Co-Created with Antigravity
+This project was designed, optimized, and pair-programmed using **Antigravity**, a next-generation agentic coding assistant developed by Google DeepMind.
+
+---
+
+## 📄 License & Rights
+
+- **Intellectual Property**: The conceptual design, brand identity, and ingestion architecture of **CLiNt Terra** were founded and envisioned exclusively by **Siddharth Gopal Dubey**.
+- **Code Ownership**: 100% of the repository's codebase and assets are owned fully by the repository authors, with no restrictions or licensing limitations from Google or Antigravity.
+- **License**: Licensed under the **MIT License**.
+
+```text
+Copyright (c) 2026 Siddharth Gopal Dubey
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+```
