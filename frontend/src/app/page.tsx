@@ -49,11 +49,12 @@ export default function Dashboard() {
     }
     if (typeof window !== 'undefined') {
       const isLocal = window.location.hostname.includes('localhost') || window.location.hostname.includes('127.0.0.1');
-      if (!isLocal) {
-        return 'https://clint-terra.onrender.com';
+      if (isLocal) {
+        return 'http://localhost:5000';
       }
+      return 'https://clint-terra.onrender.com';
     }
-    return '';
+    return 'http://localhost:5000';
   };
 
   const [ledger, setLedger] = useState<LedgerEntry[]>([]);

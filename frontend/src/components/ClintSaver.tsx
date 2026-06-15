@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { MessageSquare, X, Send, Terminal, Loader2, Sparkles, User, Info, Key } from 'lucide-react';
+import { MessageSquare, X, Send, Terminal, Loader2, Sparkles, User, Info } from 'lucide-react';
 import { LedgerStats } from '@/lib/db';
 import { LedgerEntry } from '@/lib/carbon';
 
@@ -23,7 +23,6 @@ export default function ClintSaver({ stats, ledger }: ClintSaverProps) {
   const [loading, setLoading] = useState(false);
   
   // API Key States
-  const [showKeyInput, setShowKeyInput] = useState(false);
   const [userApiKey, setUserApiKey] = useState('');
   const [isServerGeminiActive, setIsServerGeminiActive] = useState(false);
   
@@ -38,11 +37,12 @@ export default function ClintSaver({ stats, ledger }: ClintSaverProps) {
     }
     if (typeof window !== 'undefined') {
       const isLocal = window.location.hostname.includes('localhost') || window.location.hostname.includes('127.0.0.1');
-      if (!isLocal) {
-        return 'https://clint-terra.onrender.com';
+      if (isLocal) {
+        return 'http://localhost:5000';
       }
+      return 'https://clint-terra.onrender.com';
     }
-    return '';
+    return 'http://localhost:5000';
   };
 
   // Load API Key on mount and check server status
@@ -239,13 +239,6 @@ export default function ClintSaver({ stats, ledger }: ClintSaverProps) {
             </div>
             <div className="flex items-center gap-2">
               <button
-                onClick={() => setShowKeyInput(!showKeyInput)}
-                className={`p-1.5 rounded clint-btn-icon transition-colors cursor-pointer ${userApiKey ? 'text-[var(--neon-green)]' : ''}`}
-                title="Configure Gemini API Key"
-              >
-                <Key className="w-3.5 h-3.5" />
-              </button>
-              <button
                 onClick={() => setIsOpen(false)}
                 className="p-1 rounded clint-btn-icon transition-colors cursor-pointer"
               >
@@ -254,41 +247,7 @@ export default function ClintSaver({ stats, ledger }: ClintSaverProps) {
             </div>
           </div>
 
-          {/* API Key Input Overlay */}
-          {showKeyInput && (
-            <div className="clint-header p-3 text-xs font-mono space-y-2">
-              <div className="text-neutral-400 text-[10px] uppercase font-bold tracking-wider">Configure Gemini API Key</div>
-              <div className="flex gap-2">
-                <input
-                  type="password"
-                  placeholder="Paste GEMINI_API_KEY..."
-                  value={userApiKey}
-                  onChange={(e) => {
-                    setUserApiKey(e.target.value);
-                    localStorage.setItem('gemini_api_key', e.target.value);
-                  }}
-                  className="flex-1 px-2.5 py-1.5 text-[11px] clint-input rounded outline-none placeholder-neutral-500"
-                />
-                <button
-                  onClick={() => {
-                    setShowKeyInput(false);
-                    // Add a confirmation notice in chat
-                    setMessages(prev => [
-                      ...prev,
-                      {
-                        role: 'system',
-                        content: userApiKey ? '✅ Gemini API Key registered. Switching to Live LLM mode.' : '❌ API Key cleared. Switching to local cache.',
-                        timestamp: new Date()
-                      }
-                    ]);
-                  }}
-                  className="px-2.5 py-1 text-[10px] clint-btn-send font-semibold rounded cursor-pointer transition-all"
-                >
-                  Apply
-                </button>
-              </div>
-            </div>
-          )}
+          {/* API Key Input Overlay Removed */}
 
           {/* Chat Pane */}
           <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4 bg-black/45">
@@ -323,41 +282,7 @@ export default function ClintSaver({ stats, ledger }: ClintSaverProps) {
               </div>
             ))}
             
-            {/* API Key Prompt Banner */}
-            {(!userApiKey && !isServerGeminiActive) && (
-              <div className="bg-amber-500/10 border border-amber-500/30 text-amber-600 dark:text-amber-400 p-3 rounded-lg text-[10px] space-y-1.5 self-center w-full max-w-[90%] my-1 font-sans">
-                <div className="font-semibold flex items-center gap-1.5 uppercase tracking-wider text-[9px]">
-                  ⚠️ LIVE GEMINI AI MODE INACTIVE
-                </div>
-                <p className="leading-normal">
-                  CLiNt-Saver is running in local heuristic mode. To unlock fully active Gemini AI that answers ALL custom questions, paste your API key below:
-                </p>
-                <div className="flex gap-2 mt-1">
-                  <input
-                    type="password"
-                    placeholder="Paste Gemini API key and hit Enter..."
-                    className="flex-1 px-2.5 py-1.5 text-[10px] bg-white dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-800 rounded outline-none text-neutral-800 dark:text-neutral-200"
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        const val = (e.target as HTMLInputElement).value.trim();
-                        if (val) {
-                          setUserApiKey(val);
-                          localStorage.setItem('gemini_api_key', val);
-                          setMessages(prev => [
-                            ...prev,
-                            {
-                              role: 'system',
-                              content: '✅ Gemini API Key registered. Live LLM activated.',
-                              timestamp: new Date()
-                            }
-                          ]);
-                        }
-                      }
-                    }}
-                  />
-                </div>
-              </div>
-            )}
+            {/* API Key Prompt Banner Removed */}
 
             {loading && (
               <div className="flex gap-2 self-start max-w-[80%] items-center">

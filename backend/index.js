@@ -86,7 +86,7 @@ const app = express();
 app.use(cors({
   origin: '*',
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key']
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key', 'x-requester-email']
 }));
 app.use(express.json());
 
@@ -107,6 +107,9 @@ app.post('/api/auth/register', (req, res) => {
   if (!name || !email || !password) {
     return res.status(400).json({ error: 'Name, email, and password are required' });
   }
+
+  // Reload from file to ensure sync
+  serverUsers = loadUsers();
 
   const existingUser = serverUsers.find(u => u.email.toLowerCase() === email.toLowerCase());
   if (existingUser) {
