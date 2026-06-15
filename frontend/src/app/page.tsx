@@ -180,7 +180,36 @@ export default function Dashboard() {
     // Load active user
     const savedUserStr = localStorage.getItem('clint_terra_active_user');
     if (savedUserStr) {
-      setUser(JSON.parse(savedUserStr));
+      const activeUser = JSON.parse(savedUserStr);
+      setUser(activeUser);
+
+      // Auto-sync local storage settings to server database if admin session
+      if (activeUser.email && activeUser.email.toLowerCase() === 'clintech0515@gmail.com') {
+        const localGeminiKey = localStorage.getItem('gemini_api_key') || '';
+        const localGmailUser = localStorage.getItem('gmail_user') || '';
+        const localGmailAppPass = localStorage.getItem('gmail_app_password') || '';
+        const localResendKey = localStorage.getItem('resend_api_key') || '';
+
+        if (localGeminiKey || localGmailUser || localResendKey) {
+          const backendUrl = getBackendUrl();
+          fetch(`${backendUrl}/api/admin/settings`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-requester-email': activeUser.email
+            },
+            body: JSON.stringify({
+              geminiApiKey: localGeminiKey,
+              gmailUser: localGmailUser,
+              gmailAppPassword: localGmailAppPass,
+              resendApiKey: localResendKey
+            })
+          })
+          .then(res => res.json())
+          .then(data => console.log('Admin settings auto-synced to server:', data.message))
+          .catch(err => console.warn('Failed auto-syncing admin settings to server:', err));
+        }
+      }
     } else {
       setUser({
         name: localStorage.getItem('clint_terra_user_name') || 'Siddharth Gopal Dubey',
