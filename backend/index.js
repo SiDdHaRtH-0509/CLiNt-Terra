@@ -215,6 +215,29 @@ app.get('/api/admin/users', (req, res) => {
   res.json({ success: true, users: cleanUsers });
 });
 
+// Admin User Revocation Route
+app.post('/api/admin/user/delete', (req, res) => {
+  const requesterEmail = req.get('x-requester-email') || '';
+  if (requesterEmail.toLowerCase() !== 'clintech0515@gmail.com') {
+    return res.status(403).json({ error: 'Access Denied: Requester is not an authorized administrator.' });
+  }
+
+  const { emailToDelete } = req.body;
+  if (!emailToDelete) {
+    return res.status(400).json({ error: 'Email to delete is required' });
+  }
+
+  if (emailToDelete.toLowerCase() === 'clintech0515@gmail.com') {
+    return res.status(400).json({ error: 'Cannot revoke master administrator credentials' });
+  }
+
+  // Reload and filter
+  serverUsers = loadUsers().filter(u => u.email.toLowerCase() !== emailToDelete.toLowerCase());
+  saveUsers(serverUsers);
+
+  res.json({ success: true, message: 'Operator registry record revoked successfully' });
+});
+
 // Copilot Chat Route
 app.post('/api/chat', async (req, res) => {
   try {

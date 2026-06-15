@@ -105,6 +105,10 @@ export default function Dashboard() {
   const [gmailUser, setGmailUser] = useState('');
   const [gmailAppPass, setGmailAppPass] = useState('');
   const [resendKey, setResendKey] = useState('');
+  const [systemBroadcast, setSystemBroadcast] = useState('');
+  const [broadcastInput, setBroadcastInput] = useState('');
+  const [offsetAmt, setOffsetAmt] = useState(25);
+  const [offsetProject, setOffsetProject] = useState('reforestation');
 
   // Ecosystem Simulation & Audit States
   const [projEV, setProjEV] = useState(false);
@@ -166,6 +170,11 @@ export default function Dashboard() {
     setGmailUser(localStorage.getItem('gmail_user') || '');
     setGmailAppPass(localStorage.getItem('gmail_app_password') || '');
     setResendKey(localStorage.getItem('resend_api_key') || '');
+
+    // Load system broadcast
+    const savedBroadcast = localStorage.getItem('clint_system_broadcast') || '';
+    setSystemBroadcast(savedBroadcast);
+    setBroadcastInput(savedBroadcast);
 
     // Load active user
     const savedUserStr = localStorage.getItem('clint_terra_active_user');
@@ -495,8 +504,10 @@ export default function Dashboard() {
 
   const fetchAdminUsers = async () => {
     setAdminLoading(true);
-    let usersList = null;
+    let serverList = [];
+    let localList = [];
 
+    // 1. Try to fetch from backend
     try {
       const backendUrl = getBackendUrl();
       const res = await fetch(`${backendUrl}/api/admin/users`, {
@@ -506,28 +517,151 @@ export default function Dashboard() {
       });
       if (res.ok) {
         const data = await res.json();
-        usersList = data.users;
+        serverList = data.users || [];
       }
     } catch (e) {
-      console.warn('Backend admin fetch failed, falling back to local users list:', e);
+      console.warn('Backend admin fetch failed:', e);
     }
 
-    if (!usersList) {
+    // 2. Fetch from local storage
+    try {
       const usersStr = localStorage.getItem('clint_terra_users');
-      usersList = usersStr ? JSON.parse(usersStr) : [
+      localList = usersStr ? JSON.parse(usersStr) : [
+        {
+          name: 'CLiNt-Tech Administrator',
+          email: 'CLiNtech0515@gmail.com',
+          password: 'admin1234567',
+          region: 'Asia-Pacific (India)',
+          profilePic: 'https://api.dicebear.com/7.x/bottts/svg?seed=admin',
+          joinedAt: new Date().toISOString()
+        },
         {
           name: 'Siddharth Gopal Dubey',
           email: 'siddharth@dubey.me',
+          password: 'password',
           region: 'Asia-Pacific (India)',
           profilePic: 'https://api.dicebear.com/7.x/bottts/svg?seed=founder',
           joinedAt: new Date().toISOString()
         }
       ];
-      usersList = usersList.map(({ password, ...u }: any) => u);
+      // Omit passwords for security
+      localList = localList.map(({ password, ...u }: any) => u);
+    } catch (e) {
+      console.warn('Local registry fetch failed:', e);
     }
 
-    setAdminUsers(usersList);
+    // 3. Merge lists by email (case-insensitive) to prevent duplicates
+    const mergedMap = new Map();
+    
+    serverList.forEach((u: any) => {
+      if (u.email) {
+        mergedMap.set(u.email.toLowerCase(), u);
+      }
+    });
+
+    localList.forEach((u: any) => {
+      if (u.email) {
+        const emailLower = u.email.toLowerCase();
+        if (!mergedMap.has(emailLower)) {
+          mergedMap.set(emailLower, u);
+        }
+      }
+    });
+
+    const mergedList = Array.from(mergedMap.values());
+    setAdminUsers(mergedList);
     setAdminLoading(false);
+  };
+
+  const handleRevokeUser = async (emailToDelete: string) => {
+    if (!emailToDelete) return;
+    if (emailToDelete.toLowerCase() === 'clintech0515@gmail.com') {
+      alert('Security violation: Cannot revoke the master administrator credentials.');
+      return;
+    }
+    if (!confirm(`Are you sure you want to revoke and delete operator account "${emailToDelete}"?`)) {
+      return;
+    }
+
+    let success = false;
+
+    // 1. Try backend delete first
+    try {
+      const backendUrl = getBackendUrl();
+      const res = await fetch(`${backendUrl}/api/admin/user/delete`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-requester-email': user.email || ''
+        },
+        body: JSON.stringify({ emailToDelete })
+      });
+
+      if (res.ok) {
+        success = true;
+      }
+    } catch (e) {
+      console.warn('Backend user revocation failed or unreachable. Syncing locally.', e);
+    }
+
+    // 2. Local storage delete
+    try {
+      const usersStr = localStorage.getItem('clint_terra_users');
+      if (usersStr) {
+        const users = JSON.parse(usersStr);
+        const filtered = users.filter((u: any) => u.email.toLowerCase() !== emailToDelete.toLowerCase());
+        localStorage.setItem('clint_terra_users', JSON.stringify(filtered));
+        success = true;
+      }
+    } catch (e) {
+      console.error('Local storage user revocation failed:', e);
+    }
+
+    if (success) {
+      alert(`Operator account "${emailToDelete}" successfully revoked.`);
+      fetchAdminUsers();
+    } else {
+      alert('Failed to revoke operator registry record.');
+    }
+  };
+
+  const applyCarbonOffset = () => {
+    let carbonAmount = 0;
+    let title = '';
+    let details = '';
+
+    if (offsetProject === 'reforestation') {
+      carbonAmount = offsetAmt * 6;
+      title = 'Ecological Offset: Reforestation Seedlings';
+      details = `Manually contributed $${offsetAmt} to tree planting initiatives. Mapped offset coefficient: 6kg/$.`;
+    } else if (offsetProject === 'methane') {
+      carbonAmount = offsetAmt * 10;
+      title = 'Ecological Offset: Agriculture Methane Digester';
+      details = `Manually contributed $${offsetAmt} to farm waste methane capture. Mapped offset coefficient: 10kg/$.`;
+    } else {
+      carbonAmount = offsetAmt * 15;
+      title = 'Ecological Offset: Wind Infrastructure Texas';
+      details = `Manually contributed $${offsetAmt} to wind turbine power offsets. Mapped offset coefficient: 15kg/$.`;
+    }
+
+    const offsetEvent = {
+      id: 'offset-sim-' + Date.now(),
+      source: 'homeassistant' as const,
+      timestamp: new Date().toISOString(),
+      amount: -carbonAmount,
+      title: title,
+      rawDetails: details
+    };
+
+    addRawEvent(offsetEvent);
+    handleNewEntry();
+
+    confetti({
+      particleCount: 100,
+      spread: 70,
+      origin: { y: 0.75 },
+      colors: ['#00f0ff', '#00ff66', '#ffffff']
+    });
   };
 
   const handleLogout = () => {
@@ -574,6 +708,31 @@ export default function Dashboard() {
       }`} />
       
       <div className="max-w-[1550px] mx-auto flex flex-col gap-6 relative z-10">
+        {/* Global Security Broadcast Bar */}
+        {systemBroadcast && (
+          <div className="w-full px-4 py-2.5 bg-amber-950/20 border border-amber-900/60 rounded-xl flex items-center justify-between gap-4 font-mono text-[11px] text-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.1)] relative overflow-hidden shrink-0 z-20">
+            <div className="absolute left-0 top-0 bottom-0 w-1 bg-amber-500 animate-pulse" />
+            <div className="flex items-center gap-2 flex-1 min-w-0">
+              <span className="shrink-0 px-1.5 py-0.5 rounded bg-amber-950 border border-amber-700 text-amber-300 font-bold uppercase text-[9px] animate-pulse">SYSTEM ALERT</span>
+              <div className="flex-1 overflow-hidden relative">
+                <span className="block truncate whitespace-nowrap">{systemBroadcast}</span>
+              </div>
+            </div>
+            {user.email && user.email.toLowerCase() === 'clintech0515@gmail.com' && (
+              <button
+                onClick={() => {
+                  setSystemBroadcast('');
+                  setBroadcastInput('');
+                  localStorage.removeItem('clint_system_broadcast');
+                  alert('Broadcast message banner cleared successfully.');
+                }}
+                className="px-2 py-0.5 border border-amber-900/60 rounded hover:bg-amber-900/30 text-amber-500 hover:text-amber-300 cursor-pointer text-[9px]"
+              >
+                Clear Alert
+              </button>
+            )}
+          </div>
+        )}
         {/* Widescreen Gutter Panels */}
         <div className="widescreen-gutter-left-container">
           <div className="widescreen-gutter-panel">
@@ -840,6 +999,8 @@ export default function Dashboard() {
         {showAdmin && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fade-in font-mono">
             <div className="glass-panel w-full max-w-4xl p-6 bg-neutral-950 border border-red-900 shadow-[0_20px_50px_rgba(239,68,68,0.15)] relative">
+              
+              {/* Modal Header */}
               <div className="flex items-center justify-between mb-4 border-b border-neutral-900 pb-3">
                 <div className="flex items-center gap-2">
                   <ShieldAlert className="w-5 h-5 text-red-500 animate-pulse" />
@@ -853,12 +1014,38 @@ export default function Dashboard() {
                 </button>
               </div>
 
+              {/* Navigation Tabs */}
+              <div className="flex border-b border-neutral-900 mb-4 pb-1 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setAdminTab('registry')}
+                  className={`px-4 py-2 text-xs font-mono border-b-2 transition-all cursor-pointer ${
+                    adminTab === 'registry' 
+                      ? 'border-red-500 text-white font-bold' 
+                      : 'border-transparent text-neutral-500 hover:text-neutral-350'
+                  }`}
+                >
+                  💾 Operator Registry
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAdminTab('integrations')}
+                  className={`px-4 py-2 text-xs font-mono border-b-2 transition-all cursor-pointer ${
+                    adminTab === 'integrations' 
+                      ? 'border-red-500 text-white font-bold' 
+                      : 'border-transparent text-neutral-500 hover:text-neutral-350'
+                  }`}
+                >
+                  ⚙️ System Integrations & Controls
+                </button>
+              </div>
+
               {adminLoading ? (
                 <div className="h-64 flex flex-col items-center justify-center gap-3">
                   <Loader2 className="w-8 h-8 text-red-500 animate-spin" />
                   <span className="text-xs text-neutral-400">Loading master registry database packets...</span>
                 </div>
-              ) : (
+              ) : adminTab === 'registry' ? (
                 <div className="space-y-6 text-xs">
                   {/* Top Stats Overview */}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -881,9 +1068,9 @@ export default function Dashboard() {
                             const pct = Math.round((count / adminUsers.length) * 100);
                             return (
                               <div key={region} className="bg-neutral-950 p-2 rounded border border-neutral-900">
-                                <div className="text-[9px] text-neutral-400 truncate">{region}</div>
+                                <div className="text-[9px] text-neutral-450 truncate">{region}</div>
                                 <div className="flex items-center justify-between mt-1">
-                                  <span className="font-bold text-white">{count} ({pct}%)</span>
+                                  <span className="font-bold text-white text-[11px]">{count} ({pct}%)</span>
                                 </div>
                                 <div className="w-full bg-neutral-900 h-1 rounded-full mt-1.5 overflow-hidden">
                                   <div 
@@ -906,7 +1093,7 @@ export default function Dashboard() {
                       <span className="text-[9px] text-neutral-500">TIMESCALEDB METRIC LOG</span>
                     </div>
 
-                    <div className="max-h-72 overflow-y-auto">
+                    <div className="max-h-64 overflow-y-auto">
                       <table className="w-full text-left border-collapse">
                         <thead>
                           <tr className="bg-neutral-950 text-neutral-400 uppercase text-[9px] border-b border-neutral-850">
@@ -914,9 +1101,10 @@ export default function Dashboard() {
                             <th className="p-3">Email Address</th>
                             <th className="p-3">Region</th>
                             <th className="p-3">Synchronized On</th>
+                            <th className="p-3 text-right">Actions</th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-neutral-900">
+                        <tbody className="divide-y divide-neutral-900 text-[11px]">
                           {adminUsers.map((u, i) => (
                             <tr key={i} className="hover:bg-neutral-900/20 text-neutral-300 transition-colors">
                               <td className="p-3 flex items-center gap-2.5">
@@ -927,12 +1115,15 @@ export default function Dashboard() {
                                 />
                                 <div>
                                   <div className="font-bold text-white">{u.name}</div>
+                                  {u.email.toLowerCase() === 'clintech0515@gmail.com' && (
+                                    <span className="text-[8px] px-1 py-0.5 rounded bg-red-950/30 text-red-400 border border-red-900/30 uppercase font-semibold">Admin</span>
+                                  )}
                                   {u.email === 'siddharth@dubey.me' && (
-                                    <span className="text-[8px] px-1 py-0.5 rounded bg-red-950/30 text-red-400 border border-red-900/30 uppercase font-semibold">Founder</span>
+                                    <span className="text-[8px] px-1 py-0.5 rounded bg-neutral-950/30 text-neutral-400 border border-neutral-900/30 uppercase font-semibold">Founder</span>
                                   )}
                                 </div>
                               </td>
-                              <td className="p-3 text-neutral-400 font-mono select-all">{u.email}</td>
+                              <td className="p-3 text-neutral-450 font-mono select-all">{u.email}</td>
                               <td className="p-3">
                                 <span className="px-2 py-0.5 rounded-full bg-neutral-900 border border-neutral-850 text-neutral-300 text-[10px]">
                                   {u.region || 'Global'}
@@ -940,6 +1131,16 @@ export default function Dashboard() {
                               </td>
                               <td className="p-3 text-neutral-500 font-mono">
                                 {u.joinedAt ? new Date(u.joinedAt).toLocaleString() : 'N/A'}
+                              </td>
+                              <td className="p-3 text-right font-mono">
+                                {u.email.toLowerCase() !== 'clintech0515@gmail.com' && (
+                                  <button
+                                    onClick={() => handleRevokeUser(u.email)}
+                                    className="px-2 py-1 bg-red-950/30 hover:bg-red-900/50 text-red-400 border border-red-900/40 hover:border-red-500 rounded text-[9px] cursor-pointer transition-all hover:scale-[1.03]"
+                                  >
+                                    [REVOKE]
+                                  </button>
+                                )}
                               </td>
                             </tr>
                           ))}
@@ -958,6 +1159,130 @@ export default function Dashboard() {
                     </button>
                   </div>
                 </div>
+              ) : (
+                /* Integrations & Controls Tab */
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs max-w-4xl mx-auto py-2">
+                  {/* Credentials block */}
+                  <div className="bg-neutral-900/40 p-4 border border-neutral-850 rounded-lg space-y-4">
+                    <h3 className="text-[10px] text-neutral-400 uppercase font-bold border-b border-neutral-900 pb-2">API Keys & Mail Integrations</h3>
+                    
+                    {/* Gemini Key */}
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-[10px] text-neutral-400 uppercase font-bold flex items-center gap-1">
+                        <Key className="w-3 h-3 text-[var(--neon-green)]" /> Gemini API Key
+                      </label>
+                      <input
+                        type="password"
+                        placeholder="Enter GEMINI_API_KEY..."
+                        value={geminiKey}
+                        onChange={e => setGeminiKey(e.target.value)}
+                        className="w-full px-3 py-2 bg-neutral-950 border border-neutral-900 focus:border-neutral-750 rounded text-neutral-200 outline-none placeholder-neutral-700"
+                      />
+                    </div>
+
+                    {/* SMTP Credentials */}
+                    <div className="border-t border-neutral-900 pt-3 flex flex-col gap-3">
+                      <span className="text-[10px] text-neutral-400 uppercase font-bold flex items-center gap-1">
+                        <Mail className="w-3 h-3 text-[var(--neon-blue)]" /> Gmail SMTP Delivery
+                      </span>
+
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-[9px] text-neutral-450 uppercase">Gmail Address</label>
+                        <input
+                          type="email"
+                          placeholder="e.g. operator@gmail.com"
+                          value={gmailUser}
+                          onChange={e => setGmailUser(e.target.value)}
+                          className="w-full px-3 py-2 bg-neutral-950 border border-neutral-900 focus:border-neutral-750 rounded text-neutral-200 outline-none placeholder-neutral-700"
+                        />
+                      </div>
+
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-[9px] text-neutral-450 uppercase">Google App Password</label>
+                        <input
+                          type="password"
+                          placeholder="16-character app password..."
+                          value={gmailAppPass}
+                          onChange={e => setGmailAppPass(e.target.value)}
+                          className="w-full px-3 py-2 bg-neutral-950 border border-neutral-900 focus:border-neutral-750 rounded text-neutral-200 outline-none placeholder-neutral-700"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Resend Key */}
+                    <div className="border-t border-neutral-900 pt-3 flex flex-col gap-1.5">
+                      <label className="text-[10px] text-neutral-400 uppercase font-bold font-mono">Alternative: Resend API Key</label>
+                      <input
+                        type="password"
+                        placeholder="re_..."
+                        value={resendKey}
+                        onChange={e => setResendKey(e.target.value)}
+                        className="w-full px-3 py-2 bg-neutral-950 border border-neutral-900 focus:border-neutral-750 rounded text-neutral-200 outline-none placeholder-neutral-700"
+                      />
+                    </div>
+
+                    <div className="pt-2">
+                      <button
+                        onClick={saveSettings}
+                        className="w-full py-2 bg-[#00f0ff] hover:bg-[#55f5ff] text-black font-semibold rounded cursor-pointer transition-all text-center"
+                      >
+                        Save & Apply Credentials
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* System broadcast & actions block */}
+                  <div className="bg-neutral-900/40 p-4 border border-neutral-850 rounded-lg flex flex-col gap-4">
+                    <h3 className="text-[10px] text-neutral-400 uppercase font-bold border-b border-neutral-900 pb-2">Global System Broadcast Controls</h3>
+                    
+                    <div className="flex flex-col gap-2 flex-1">
+                      <label className="text-[10px] text-neutral-400 uppercase font-bold">📢 Create System Alert Banner</label>
+                      <textarea
+                        placeholder="Type a warning, announcement, or status update here..."
+                        value={broadcastInput}
+                        onChange={e => setBroadcastInput(e.target.value)}
+                        rows={5}
+                        className="w-full p-3 bg-neutral-950 border border-neutral-900 focus:border-red-500 rounded text-neutral-200 outline-none placeholder-neutral-700 font-mono text-[11px]"
+                      />
+                      
+                      <div className="flex gap-2 mt-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (broadcastInput.trim()) {
+                              setSystemBroadcast(broadcastInput);
+                              localStorage.setItem('clint_system_broadcast', broadcastInput);
+                              alert('Global banner alert broadcasted successfully.');
+                            }
+                          }}
+                          className="flex-1 py-2 bg-red-950/40 hover:bg-red-950/70 text-red-400 border border-red-900/50 rounded font-semibold transition-all cursor-pointer text-center"
+                        >
+                          📢 Push Alert
+                        </button>
+                        
+                        {systemBroadcast && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSystemBroadcast('');
+                              setBroadcastInput('');
+                              localStorage.removeItem('clint_system_broadcast');
+                              alert('Broadcast message cleared successfully.');
+                            }}
+                            className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 border border-neutral-750 rounded text-neutral-350 cursor-pointer"
+                          >
+                            Clear Banner
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="border-t border-neutral-900 pt-3 text-[10px] text-neutral-450 space-y-1">
+                      <div>• Broadcasts are immediately synchronized locally for all network nodes.</div>
+                      <div>• Banner alert will slide in at the very top of all active user sessions.</div>
+                    </div>
+                  </div>
+                </div>
               )}
             </div>
           </div>
@@ -969,6 +1294,74 @@ export default function Dashboard() {
           {/* Left Column: Passive Telemetry Ingest HUD */}
           <div className="xl:col-span-2 hidden xl:flex flex-col gap-4">
             <LeftHUDPanel onNewEntry={handleNewEntry} />
+
+            {/* Regional Grid Profile Card */}
+            <div className="glass-panel p-4 bg-black/60 font-mono space-y-3 border border-neutral-900">
+              <div className="text-[9px] text-neutral-500 uppercase font-bold tracking-wider border-b border-neutral-900 pb-1.5 flex items-center gap-1.5">
+                <Globe className="w-3.5 h-3.5 text-[var(--neon-blue)]" /> Regional Grid Intensity
+              </div>
+              <div className="space-y-2 text-xs">
+                <div>
+                  <span className="text-[8px] text-neutral-500 block uppercase">Active Zone</span>
+                  <span className="text-white font-semibold">{user.region || 'Asia-Pacific (India)'}</span>
+                </div>
+                
+                {(() => {
+                  const region = user.region || 'Asia-Pacific (India)';
+                  let intensity = 'High Carbon Grid';
+                  let coefficient = '0.72 kg/kWh';
+                  let colorClass = 'text-red-500';
+                  let pct = '85%';
+                  let rec = 'Install solar panels to offset grid dependence.';
+
+                  if (region.includes('Europe')) {
+                    intensity = 'Low Carbon Renewable';
+                    coefficient = '0.28 kg/kWh';
+                    colorClass = 'text-[var(--neon-green)]';
+                    pct = '30%';
+                    rec = 'Opt for time-of-use scheduling during off-peak hours.';
+                  } else if (region.includes('North America')) {
+                    intensity = 'Moderate Carbon mix';
+                    coefficient = '0.45 kg/kWh';
+                    colorClass = 'text-[var(--neon-yellow)]';
+                    pct = '55%';
+                    rec = 'Upgrade household appliances to smart energy ratings.';
+                  } else if (region.includes('Latin America')) {
+                    intensity = 'Moderate Hydro/Gas mix';
+                    coefficient = '0.38 kg/kWh';
+                    colorClass = 'text-[var(--neon-yellow)]';
+                    pct = '45%';
+                    rec = 'Implement intelligent smart thermostats to regulate loads.';
+                  }
+
+                  return (
+                    <div className="space-y-2">
+                      <div>
+                        <span className="text-[8px] text-neutral-500 block uppercase">Carbon Intensity Profile</span>
+                        <span className={`font-semibold ${colorClass}`}>{intensity}</span>
+                      </div>
+                      <div>
+                        <span className="text-[8px] text-neutral-500 block uppercase">Grid Coefficient</span>
+                        <span className="text-white font-mono font-bold text-[11px]">{coefficient}</span>
+                      </div>
+                      
+                      <div className="w-full bg-neutral-950 h-1.5 rounded-full overflow-hidden mt-1">
+                        <div 
+                          style={{ width: pct }} 
+                          className={`h-full rounded-full ${
+                            region.includes('Europe') ? 'bg-green-500' : region.includes('North America') || region.includes('Latin America') ? 'bg-yellow-500' : 'bg-red-500'
+                          }`}
+                        />
+                      </div>
+                      
+                      <div className="text-[8px] text-neutral-450 italic mt-2 border-t border-neutral-950 pt-2 leading-relaxed">
+                        Recommendation: {rec}
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
           </div>
 
           {/* Center Column: Globe & Pipeline forms */}
@@ -1009,6 +1402,74 @@ export default function Dashboard() {
                     <div className="mt-2 text-[9px] font-mono text-neutral-500">
                       {stats.weeklySavingRate > 0 ? 'Eco-balance stable under budget' : 'Critical footprint warning limit reached'}
                     </div>
+                  </div>
+                </div>
+
+                {/* Carbon Offset Simulator Widget */}
+                <div className="glass-panel p-5 bg-black/60 font-mono space-y-4 border border-neutral-900 hover:border-neutral-800 mt-4">
+                  <div className="flex items-center justify-between border-b border-neutral-900 pb-2">
+                    <span className="text-[10px] text-neutral-450 uppercase font-bold flex items-center gap-1.5">
+                      🌱 Carbon Offset Simulator
+                    </span>
+                    <span className="text-[8px] text-[var(--neon-green)] uppercase">Carbon Negative Node</span>
+                  </div>
+
+                  <div className="space-y-3 text-xs">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {/* Project Selection */}
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[9px] text-neutral-500 uppercase font-bold">Ecological Initiative</label>
+                        <select
+                          value={offsetProject}
+                          onChange={e => setOffsetProject(e.target.value)}
+                          className="w-full px-2 py-1.5 bg-neutral-900 border border-neutral-850 rounded text-neutral-200 outline-none focus:border-[var(--neon-blue)]"
+                        >
+                          <option value="reforestation">Reforestation Seedlings ($2/kg)</option>
+                          <option value="methane">Agricultural Methane Digester ($1.5/kg)</option>
+                          <option value="wind">Texas Wind Turbine Grid ($1/kg)</option>
+                        </select>
+                      </div>
+
+                      {/* Offset Budget */}
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[9px] text-neutral-500 uppercase font-bold flex justify-between">
+                          <span>Investment Budget</span>
+                          <span className="text-white">${offsetAmt} USD</span>
+                        </label>
+                        <input
+                          type="range"
+                          min="5"
+                          max="150"
+                          step="5"
+                          value={offsetAmt}
+                          onChange={e => setOffsetAmt(parseInt(e.target.value, 10))}
+                          className="w-full h-1.5 bg-neutral-900 rounded-lg appearance-none cursor-pointer accent-[var(--neon-blue)] mt-2"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Calculated Yield display */}
+                    <div className="p-3 bg-neutral-950/70 border border-neutral-900 rounded-lg flex items-center justify-between">
+                      <div>
+                        <div className="text-[8px] text-neutral-500 uppercase">Simulated Footprint Deducted</div>
+                        <div className="text-lg font-bold text-[var(--neon-green)] mt-0.5">
+                          -{offsetProject === 'reforestation' ? offsetAmt * 6 : offsetProject === 'methane' ? offsetAmt * 10 : offsetAmt * 15} kg CO2e
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-[8px] text-neutral-500 uppercase">Twin Biome Impact</div>
+                        <div className="text-[10px] text-white font-semibold mt-0.5">
+                          {offsetProject === 'reforestation' ? 'Forest Canopy Expand' : offsetProject === 'methane' ? 'Waste Stream Purge' : 'Grid Mix Decarbonize'}
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={applyCarbonOffset}
+                      className="w-full py-2 bg-[var(--neon-blue)] text-black font-semibold rounded cursor-pointer transition-all hover:bg-cyan-400 text-center flex items-center justify-center gap-1.5 text-xs uppercase"
+                    >
+                      Apply Offset Ledger Entry
+                    </button>
                   </div>
                 </div>
               </div>
