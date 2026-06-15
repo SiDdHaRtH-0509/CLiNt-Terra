@@ -83,6 +83,7 @@ export default function Dashboard() {
   const [showAdmin, setShowAdmin] = useState(false);
   const [adminUsers, setAdminUsers] = useState<any[]>([]);
   const [adminLoading, setAdminLoading] = useState(false);
+  const [adminTab, setAdminTab] = useState<'registry' | 'integrations'>('registry');
 
   // User Profile Form States
   const [profileName, setProfileName] = useState('');
@@ -660,14 +661,7 @@ export default function Dashboard() {
               🗺️ <span className="hidden sm:inline">Tour</span>
             </button>
 
-            {/* Settings trigger */}
-            <button
-              onClick={() => setShowSettings(true)}
-              className="p-2 border border-neutral-800 hover:border-neutral-750 bg-neutral-900/60 hover:bg-neutral-800 rounded-lg cursor-pointer transition-colors text-neutral-300 hover:text-white"
-              title="Configure Credentials"
-            >
-              <Settings className="w-3.5 h-3.5" />
-            </button>
+
             
             <button
               onClick={handleLogout}
@@ -679,91 +673,7 @@ export default function Dashboard() {
           </div>
         </header>
 
-        {/* Settings Modal (Credentials config) */}
-        {showSettings && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in font-mono">
-            <div className="glass-panel w-full max-w-md p-6 bg-neutral-950 border border-neutral-800 shadow-[0_20px_50px_rgba(0,0,0,0.8)] relative">
-              <div className="flex items-center gap-2 mb-4 border-b border-neutral-900 pb-3">
-                <Settings className="w-5 h-5 text-[var(--neon-blue)]" />
-                <h2 className="text-sm font-bold text-white uppercase tracking-wider">Integrations & Credentials</h2>
-              </div>
-              
-              <div className="space-y-4 text-xs">
-                {/* Gemini Key */}
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-[10px] text-neutral-400 uppercase font-bold flex items-center gap-1">
-                    <Key className="w-3 h-3 text-[var(--neon-green)]" /> Gemini API Key
-                  </label>
-                  <input
-                    type="password"
-                    placeholder="Enter GEMINI_API_KEY..."
-                    value={geminiKey}
-                    onChange={e => setGeminiKey(e.target.value)}
-                    className="w-full px-3 py-2 bg-neutral-900 border border-neutral-850 focus:border-neutral-750 rounded text-neutral-200 outline-none placeholder-neutral-600"
-                  />
-                  <span className="text-[9px] text-neutral-500">Required for live conversational AI (CLiNt-Saver) response.</span>
-                </div>
 
-                {/* SMTP Credentials */}
-                <div className="border-t border-neutral-900 pt-3 flex flex-col gap-3">
-                  <span className="text-[10px] text-neutral-400 uppercase font-bold flex items-center gap-1">
-                    <Mail className="w-3 h-3 text-[var(--neon-blue)]" /> Gmail SMTP Delivery
-                  </span>
-
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-[9px] text-neutral-450 uppercase">Gmail Address</label>
-                    <input
-                      type="email"
-                      placeholder="e.g. operator@gmail.com"
-                      value={gmailUser}
-                      onChange={e => setGmailUser(e.target.value)}
-                      className="w-full px-3 py-2 bg-neutral-900 border border-neutral-850 focus:border-neutral-750 rounded text-neutral-200 outline-none placeholder-neutral-600"
-                    />
-                  </div>
-
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-[9px] text-neutral-450 uppercase">Google App Password</label>
-                    <input
-                      type="password"
-                      placeholder="16-character app password..."
-                      value={gmailAppPass}
-                      onChange={e => setGmailAppPass(e.target.value)}
-                      className="w-full px-3 py-2 bg-neutral-900 border border-neutral-850 focus:border-neutral-750 rounded text-neutral-200 outline-none placeholder-neutral-600"
-                    />
-                    <span className="text-[9px] text-neutral-500">Created under Google Account security &rarr; App Passwords.</span>
-                  </div>
-                </div>
-
-                {/* Resend Key */}
-                <div className="border-t border-neutral-900 pt-3 flex flex-col gap-1.5">
-                  <label className="text-[10px] text-neutral-400 uppercase font-bold">Alternative: Resend API Key</label>
-                  <input
-                    type="password"
-                    placeholder="re_..."
-                    value={resendKey}
-                    onChange={e => setResendKey(e.target.value)}
-                    className="w-full px-3 py-2 bg-neutral-900 border border-neutral-850 focus:border-neutral-750 rounded text-neutral-200 outline-none placeholder-neutral-600"
-                  />
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-2 mt-6 border-t border-neutral-900 pt-3">
-                <button
-                  onClick={() => setShowSettings(false)}
-                  className="px-3 py-1.5 border border-neutral-850 rounded hover:bg-neutral-900 text-neutral-400 hover:text-white cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={saveSettings}
-                  className="px-4 py-1.5 clint-btn-blue hover:opacity-90 font-semibold rounded cursor-pointer transition-all"
-                >
-                  Save & Apply
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* User Profile Settings Modal */}
         {showProfile && (
