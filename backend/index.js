@@ -389,6 +389,17 @@ app.post('/api/send-email', async (req, res) => {
 
   } catch (error) {
     console.error('Mail delivery worker failed:', error);
+    
+    // Write detailed error to mail_errors.log
+    const logFile = path.join(__dirname, 'mail_errors.log');
+    const timestamp = new Date().toISOString();
+    const logMsg = `[${timestamp}] Recipient: ${recipient} | Error: ${error.message}\nStack: ${error.stack}\n\n`;
+    try {
+      fs.appendFileSync(logFile, logMsg, 'utf8');
+    } catch (e) {
+      console.error('Failed to write to mail_errors.log:', e);
+    }
+
     return res.status(500).json({ error: error.message || 'SMTP Handshake failed' });
   }
 });
@@ -547,6 +558,12 @@ app.post('/api/admin/settings', (req, res) => {
 
   try {
     fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2), 'utf8');
+    
+    // Log sync success to mail_errors.log
+    const logFile = path.join(__dirname, 'mail_errors.log');
+    const timestamp = new Date().toISOString();
+    fs.appendFileSync(logFile, `[${timestamp}] Settings synchronized successfully on the server. gmailUser: ${gmailUser || 'none'}\n`, 'utf8');
+
     res.json({ success: true, message: 'System integration settings updated successfully on the server.' });
   } catch (e) {
     console.error('Error saving settings.json:', e);
