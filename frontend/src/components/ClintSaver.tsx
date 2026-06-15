@@ -94,16 +94,7 @@ export default function ClintSaver({ stats, ledger }: ClintSaverProps) {
       setMessages([
         {
           role: 'assistant',
-          content: `Hello! I am CLiNt-Saver, your personal sustainability AI copilot. 
-
-🔒 **Privacy Notice**: Any API Key or SMTP App Password you enter here is stored **100% locally in your own browser's storage** and is never seen by anyone else. For live production, you can set these as environment variables on your hosting server (like Vercel) so all visitors can chat and receive emails automatically!
-
-📧 **To Activate Email Automation**:
-1. Go to Google Account Settings → Security → Enable 2-Step Verification.
-2. Search and click "App Passwords", then generate a 16-character password (e.g. \`xxxx yyyy zzzz wwww\`).
-3. Click the Settings icon in the header, enter your Gmail Address and App Password, and click Apply.
-
-🔑 **To Activate Gemini AI**: Click the Key icon above or the Settings icon in the header, paste a **Gemini API Key**, and click Apply to enable full live replies to any custom question!`,
+          content: `Hello! I am CLiNt-Saver, your personal sustainability AI copilot. How can I help you analyze your carbon ledger, manage your twin biome, or lower your environmental footprint today?`,
           timestamp: new Date()
         }
       ]);
@@ -143,6 +134,7 @@ export default function ClintSaver({ stats, ledger }: ClintSaverProps) {
         },
         body: JSON.stringify({
           message: query,
+          apiKey: userApiKey,
           stats: {
             totalCarbon: stats.totalCarbon,
             weeklySavingRate: stats.weeklySavingRate,

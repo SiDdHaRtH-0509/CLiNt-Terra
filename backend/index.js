@@ -8,7 +8,11 @@ dotenv.config();
 
 const app = express();
 
-app.use(cors());
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key']
+}));
 app.use(express.json());
 
 // Health Check Route
@@ -25,11 +29,11 @@ app.get('/', (req, res) => {
 // Copilot Chat Route
 app.post('/api/chat', async (req, res) => {
   try {
-    const { message, stats, ledgerSummary } = req.body;
+    const { message, stats, ledgerSummary, apiKey: bodyApiKey } = req.body;
     
-    // Retrieve key from env or header fallback
-    const userApiKey = req.get('x-api-key') || '';
-    const apiKey = process.env.GEMINI_API_KEY || userApiKey || '';
+    // Retrieve key from env, body, or header fallback
+    const headerApiKey = req.get('x-api-key') || '';
+    const apiKey = process.env.GEMINI_API_KEY || bodyApiKey || headerApiKey || '';
     const genAI = apiKey ? new GoogleGenerativeAI(apiKey) : null;
 
     const systemPrompt = `You are CLiNt-Saver, the dedicated personal sustainability AI copilot for the CLiNt Terra platform.
@@ -65,11 +69,7 @@ INSTRUCTIONS:
 
     const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
     
-    const result = await model.generateContent({
-      contents: [
-        { role: 'user', parts: [{ text: `System context: ${systemPrompt}\n\nUser query: ${message}` }] }
-      ]
-    });
+    const result = await model.generateContent(`System context: ${systemPrompt}\n\nUser query: ${message}`);
 
     const responseText = result.response.text();
     return res.json({ reply: responseText.trim() });
@@ -122,10 +122,15 @@ app.post('/api/send-email', async (req, res) => {
     // 2. Deliver via Nodemailer Gmail SMTP if Gmail credentials provided
     if (gmailUser && gmailAppPassword) {
       const transporter = nodemailer.createTransport({
-        service: 'gmail',
+        host: 'smtp.gmail.com',
+        port: 465,
+        secure: true,
         auth: {
           user: gmailUser,
           pass: gmailAppPassword
+        },
+        tls: {
+          rejectUnauthorized: false
         }
       });
 
