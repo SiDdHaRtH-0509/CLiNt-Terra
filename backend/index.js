@@ -6,6 +6,7 @@ import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import mongoose from 'mongoose';
 
 dotenv.config();
 
@@ -81,6 +82,148 @@ function saveUsers(usersList) {
 
 let serverUsers = loadUsers();
 
+// MongoDB Database Integration
+const MONGODB_URI = process.env.MONGODB_URI || '';
+let isMongoConnected = false;
+
+if (MONGODB_URI) {
+  mongoose.connect(MONGODB_URI)
+    .then(() => {
+      console.log('Successfully linked to MongoDB Atlas database node.');
+      isMongoConnected = true;
+    })
+    .catch((err) => {
+      console.error('Failed to establish MongoDB link, running filesystem fallback:', err);
+    });
+} else {
+  console.log('No MONGODB_URI specified. Operating with filesystem JSON fallback.');
+}
+
+// MongoDB Schemas & Models
+const userSchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  email: { type: String, required: true, unique: true },
+  password: { type: String, required: true },
+  region: { type: String, default: 'Asia-Pacific (India)' },
+  profilePic: { type: String },
+  joinedAt: { type: Date, default: Date.now }
+});
+const MongoUser = mongoose.models.User || mongoose.model('User', userSchema);
+
+const settingsSchema = new mongoose.Schema({
+  geminiApiKey: { type: String, default: '' },
+  gmailUser: { type: String, default: '' },
+  gmailAppPassword: { type: String, default: '' },
+  resendApiKey: { type: String, default: '' }
+});
+const MongoSettings = mongoose.models.Settings || mongoose.model('Settings', settingsSchema);
+
+// Database Layer Helper Functions
+async function getStoredUsers() {
+  if (isMongoConnected) {
+    try {
+      const users = await MongoUser.find({});
+      return users.map(u => u.toObject());
+    } catch (e) {
+      console.error('Failed to get MongoDB users:', e);
+    }
+  }
+  return loadUsers();
+}
+
+async function registerNewUser(userObj) {
+  if (isMongoConnected) {
+    try {
+      const newUser = new MongoUser(userObj);
+      await newUser.save();
+      return newUser.toObject();
+    } catch (e) {
+      console.error('Failed to save user in MongoDB:', e);
+      throw e;
+    }
+  } else {
+    serverUsers = loadUsers();
+    serverUsers.push(userObj);
+    saveUsers(serverUsers);
+    return userObj;
+  }
+}
+
+async function deleteStoredUser(email) {
+  if (isMongoConnected) {
+    try {
+      await MongoUser.deleteOne({ email: { $regex: new RegExp(`^${email}$`, 'i') } });
+      return true;
+    } catch (e) {
+      console.error('Failed to delete MongoDB user:', e);
+      throw e;
+    }
+  } else {
+    serverUsers = loadUsers().filter(u => u.email.toLowerCase() !== email.toLowerCase());
+    saveUsers(serverUsers);
+    return true;
+  }
+}
+
+async function updateStoredUser(email, updateFields) {
+  if (isMongoConnected) {
+    try {
+      const updated = await MongoUser.findOneAndUpdate(
+        { email: { $regex: new RegExp(`^${email}$`, 'i') } },
+        { $set: updateFields },
+        { new: true }
+      );
+      return updated ? updated.toObject() : null;
+    } catch (e) {
+      console.error('Failed to update MongoDB user:', e);
+      throw e;
+    }
+  } else {
+    serverUsers = loadUsers();
+    const idx = serverUsers.findIndex(u => u.email.toLowerCase() === email.toLowerCase());
+    if (idx === -1) return null;
+    
+    if (updateFields.email) serverUsers[idx].email = updateFields.email;
+    if (updateFields.name) serverUsers[idx].name = updateFields.name;
+    if (updateFields.password) serverUsers[idx].password = updateFields.password;
+    if (updateFields.region) serverUsers[idx].region = updateFields.region;
+    if (updateFields.profilePic) serverUsers[idx].profilePic = updateFields.profilePic;
+    
+    saveUsers(serverUsers);
+    return serverUsers[idx];
+  }
+}
+
+async function getStoredSettings() {
+  if (isMongoConnected) {
+    try {
+      const settingsObj = await MongoSettings.findOne({});
+      return settingsObj ? settingsObj.toObject() : {};
+    } catch (e) {
+      console.error('Failed to get MongoDB settings:', e);
+    }
+  }
+  return loadSettings();
+}
+
+async function saveStoredSettings(settingsObj) {
+  if (isMongoConnected) {
+    try {
+      await MongoSettings.deleteMany({});
+      const newSettings = new MongoSettings(settingsObj);
+      await newSettings.save();
+      return newSettings.toObject();
+    } catch (e) {
+      console.error('Failed to save settings in MongoDB:', e);
+      throw e;
+    }
+  } else {
+    const SETTINGS_FILE = path.join(__dirname, 'settings.json');
+    fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settingsObj, null, 2), 'utf8');
+    return settingsObj;
+  }
+}
+
 const app = express();
 
 app.use(cors({
@@ -102,124 +245,128 @@ app.get('/', (req, res) => {
 });
 
 // User Registration Route
-app.post('/api/auth/register', (req, res) => {
+app.post('/api/auth/register', async (req, res) => {
   const { name, email, password, region, profilePic } = req.body;
   if (!name || !email || !password) {
     return res.status(400).json({ error: 'Name, email, and password are required' });
   }
 
-  // Reload from file to ensure sync
-  serverUsers = loadUsers();
+  try {
+    const users = await getStoredUsers();
+    const existingUser = users.find(u => u.email.toLowerCase() === email.toLowerCase());
+    if (existingUser) {
+      return res.status(400).json({ error: 'Email already registered' });
+    }
 
-  const existingUser = serverUsers.find(u => u.email.toLowerCase() === email.toLowerCase());
-  if (existingUser) {
-    return res.status(400).json({ error: 'Email already registered' });
+    const newUser = {
+      name,
+      email,
+      password,
+      region: region || 'Global',
+      profilePic: profilePic || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(name)}`,
+      joinedAt: new Date().toISOString()
+    };
+
+    const savedUser = await registerNewUser(newUser);
+    res.json({ success: true, user: { name: savedUser.name, email: savedUser.email, region: savedUser.region, profilePic: savedUser.profilePic } });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to write operator node registry: ' + e.message });
   }
-
-  const newUser = {
-    name,
-    email,
-    password,
-    region: region || 'Global',
-    profilePic: profilePic || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(name)}`,
-    joinedAt: new Date().toISOString()
-  };
-
-  serverUsers.push(newUser);
-  saveUsers(serverUsers);
-
-  res.json({ success: true, user: { name: newUser.name, email: newUser.email, region: newUser.region, profilePic: newUser.profilePic } });
 });
 
 // User Login Route
-app.post('/api/auth/login', (req, res) => {
+app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) {
     return res.status(400).json({ error: 'Email and password are required' });
   }
 
-  // Reload from file to ensure sync
-  serverUsers = loadUsers();
-
-  const user = serverUsers.find(u => u.email.toLowerCase() === email.toLowerCase());
-  if (!user) {
-    return res.status(400).json({ error: 'Account not found' });
-  }
-
-  if (user.password !== password) {
-    return res.status(400).json({ error: 'Invalid passphrase' });
-  }
-
-  res.json({
-    success: true,
-    user: {
-      name: user.name,
-      email: user.email,
-      region: user.region,
-      profilePic: user.profilePic
+  try {
+    const users = await getStoredUsers();
+    const user = users.find(u => u.email.toLowerCase() === email.toLowerCase());
+    if (!user) {
+      return res.status(400).json({ error: 'Account not found' });
     }
-  });
+
+    if (user.password !== password) {
+      return res.status(400).json({ error: 'Invalid passphrase' });
+    }
+
+    res.json({
+      success: true,
+      user: {
+        name: user.name,
+        email: user.email,
+        region: user.region,
+        profilePic: user.profilePic
+      }
+    });
+  } catch (e) {
+    res.status(500).json({ error: 'Database handshake error: ' + e.message });
+  }
 });
 
 // Profile Update Route
-app.post('/api/user/update', (req, res) => {
+app.post('/api/user/update', async (req, res) => {
   const { email, name, newEmail, password, region, profilePic } = req.body;
   if (!email) {
     return res.status(400).json({ error: 'Current email is required' });
   }
 
-  // Reload from file to ensure sync
-  serverUsers = loadUsers();
-
-  const userIndex = serverUsers.findIndex(u => u.email.toLowerCase() === email.toLowerCase());
-  if (userIndex === -1) {
-    return res.status(400).json({ error: 'User not found' });
-  }
-
-  // If email changes, make sure the new email is not taken
-  if (newEmail && newEmail.toLowerCase() !== email.toLowerCase()) {
-    const emailTaken = serverUsers.find(u => u.email.toLowerCase() === newEmail.toLowerCase());
-    if (emailTaken) {
-      return res.status(400).json({ error: 'New email address is already taken' });
+  try {
+    const users = await getStoredUsers();
+    const user = users.find(u => u.email.toLowerCase() === email.toLowerCase());
+    if (!user) {
+      return res.status(400).json({ error: 'User not found' });
     }
-    serverUsers[userIndex].email = newEmail;
-  }
 
-  if (name) serverUsers[userIndex].name = name;
-  if (password) serverUsers[userIndex].password = password;
-  if (region) serverUsers[userIndex].region = region;
-  if (profilePic) serverUsers[userIndex].profilePic = profilePic;
-
-  saveUsers(serverUsers);
-
-  res.json({
-    success: true,
-    user: {
-      name: serverUsers[userIndex].name,
-      email: serverUsers[userIndex].email,
-      region: serverUsers[userIndex].region,
-      profilePic: serverUsers[userIndex].profilePic
+    if (newEmail && newEmail.toLowerCase() !== email.toLowerCase()) {
+      const emailTaken = users.find(u => u.email.toLowerCase() === newEmail.toLowerCase());
+      if (emailTaken) {
+        return res.status(400).json({ error: 'New email address is already taken' });
+      }
     }
-  });
+
+    const updates = {};
+    if (name) updates.name = name;
+    if (newEmail) updates.email = newEmail;
+    if (password) updates.password = password;
+    if (region) updates.region = region;
+    if (profilePic) updates.profilePic = profilePic;
+
+    const updatedUser = await updateStoredUser(email, updates);
+    res.json({
+      success: true,
+      user: {
+        name: updatedUser.name,
+        email: updatedUser.email,
+        region: updatedUser.region,
+        profilePic: updatedUser.profilePic
+      }
+    });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to update operator profile: ' + e.message });
+  }
 });
 
 // Admin Users List Route
-app.get('/api/admin/users', (req, res) => {
+app.get('/api/admin/users', async (req, res) => {
   const requesterEmail = req.get('x-requester-email') || '';
   if (requesterEmail.toLowerCase() !== 'clintech0515@gmail.com') {
     return res.status(403).json({ error: 'Access Denied: Requester is not an authorized administrator.' });
   }
 
-  // Reload from file to ensure sync
-  serverUsers = loadUsers();
-  
-  // Return users with passwords omitted for security
-  const cleanUsers = serverUsers.map(({ password, ...u }) => u);
-  res.json({ success: true, users: cleanUsers });
+  try {
+    const users = await getStoredUsers();
+    const cleanUsers = users.map(({ password, ...u }) => u);
+    res.json({ success: true, users: cleanUsers });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to query operator database: ' + e.message });
+  }
 });
 
 // Admin User Revocation Route
-app.post('/api/admin/user/delete', (req, res) => {
+app.post('/api/admin/user/delete', async (req, res) => {
   const requesterEmail = req.get('x-requester-email') || '';
   if (requesterEmail.toLowerCase() !== 'clintech0515@gmail.com') {
     return res.status(403).json({ error: 'Access Denied: Requester is not an authorized administrator.' });
@@ -234,11 +381,12 @@ app.post('/api/admin/user/delete', (req, res) => {
     return res.status(400).json({ error: 'Cannot revoke master administrator credentials' });
   }
 
-  // Reload and filter
-  serverUsers = loadUsers().filter(u => u.email.toLowerCase() !== emailToDelete.toLowerCase());
-  saveUsers(serverUsers);
-
-  res.json({ success: true, message: 'Operator registry record revoked successfully' });
+  try {
+    await deleteStoredUser(emailToDelete);
+    res.json({ success: true, message: 'Operator registry record revoked successfully' });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to delete operator from database node: ' + e.message });
+  }
 });
 
 // Copilot Chat Route
@@ -248,7 +396,7 @@ app.post('/api/chat', async (req, res) => {
     
     // Retrieve key from env, body, or header fallback
     const headerApiKey = req.get('x-api-key') || '';
-    const serverSettings = loadSettings();
+    const serverSettings = await getStoredSettings();
     const apiKey = process.env.GEMINI_API_KEY || serverSettings.geminiApiKey || bodyApiKey || headerApiKey || '';
     const genAI = apiKey ? new GoogleGenerativeAI(apiKey) : null;
 
@@ -309,7 +457,7 @@ app.post('/api/send-email', async (req, res) => {
       return res.status(400).json({ error: 'Recipient is required' });
     }
 
-    const serverSettings = loadSettings();
+    const serverSettings = await getStoredSettings();
     const resendApiKey = process.env.RESEND_API_KEY || serverSettings.resendApiKey || credentials?.resendApiKey || '';
     const gmailUser = process.env.GMAIL_USER || serverSettings.gmailUser || credentials?.gmailUser || '';
     const gmailAppPassword = process.env.GMAIL_APP_PASSWORD || serverSettings.gmailAppPassword || credentials?.gmailAppPassword || '';
