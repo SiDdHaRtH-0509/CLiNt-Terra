@@ -248,7 +248,8 @@ app.post('/api/chat', async (req, res) => {
     
     // Retrieve key from env, body, or header fallback
     const headerApiKey = req.get('x-api-key') || '';
-    const apiKey = process.env.GEMINI_API_KEY || bodyApiKey || headerApiKey || '';
+    const serverSettings = loadSettings();
+    const apiKey = process.env.GEMINI_API_KEY || serverSettings.geminiApiKey || bodyApiKey || headerApiKey || '';
     const genAI = apiKey ? new GoogleGenerativeAI(apiKey) : null;
 
     const systemPrompt = `You are CLiNt-Saver, the dedicated personal sustainability AI copilot for the CLiNt Terra platform.
@@ -308,57 +309,76 @@ app.post('/api/send-email', async (req, res) => {
       return res.status(400).json({ error: 'Recipient is required' });
     }
 
-    const resendApiKey = process.env.RESEND_API_KEY || credentials?.resendApiKey || '';
-    const gmailUser = process.env.GMAIL_USER || credentials?.gmailUser || '';
-    const gmailAppPassword = process.env.GMAIL_APP_PASSWORD || credentials?.gmailAppPassword || '';
+    const serverSettings = loadSettings();
+    const resendApiKey = process.env.RESEND_API_KEY || serverSettings.resendApiKey || credentials?.resendApiKey || '';
+    const gmailUser = process.env.GMAIL_USER || serverSettings.gmailUser || credentials?.gmailUser || '';
+    const gmailAppPassword = process.env.GMAIL_APP_PASSWORD || serverSettings.gmailAppPassword || credentials?.gmailAppPassword || '';
+
+    let emailSent = false;
+    let methodUsed = '';
 
     // 1. Deliver via Resend if API Key provided
     if (resendApiKey) {
-      const response = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${resendApiKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          from: 'CLiNt Terra <onboarding@resend.dev>',
-          to: recipient,
-          subject: subject,
-          html: html
-        })
-      });
+      try {
+        const response = await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${resendApiKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            from: 'CLiNt Terra <onboarding@resend.dev>',
+            to: recipient,
+            subject: subject,
+            html: html
+          })
+        });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Resend API failed: ${errorText}`);
+        if (response.ok) {
+          emailSent = true;
+          methodUsed = 'resend';
+        } else {
+          const errorText = await response.text();
+          console.warn(`Resend API failed: ${errorText}. Attempting SMTP fallback...`);
+        }
+      } catch (e) {
+        console.warn(`Resend API delivery failed: ${e.message}. Attempting SMTP fallback...`);
       }
-
-      return res.json({ success: true, method: 'resend' });
     }
 
     // 2. Deliver via Nodemailer Gmail SMTP if Gmail credentials provided
-    if (gmailUser && gmailAppPassword) {
-      const transporter = nodemailer.createTransport({
-        host: 'smtp.gmail.com',
-        port: 465,
-        secure: true,
-        auth: {
-          user: gmailUser,
-          pass: gmailAppPassword
-        },
-        tls: {
-          rejectUnauthorized: false
-        }
-      });
+    if (!emailSent && gmailUser && gmailAppPassword) {
+      try {
+        const transporter = nodemailer.createTransport({
+          host: 'smtp.gmail.com',
+          port: 465,
+          secure: true,
+          auth: {
+            user: gmailUser,
+            pass: gmailAppPassword
+          },
+          tls: {
+            rejectUnauthorized: false
+          }
+        });
 
-      await transporter.sendMail({
-        from: `"CLiNt Terra" <${gmailUser}>`,
-        to: recipient,
-        subject: subject,
-        html: html
-      });
+        await transporter.sendMail({
+          from: `"CLiNt Terra" <${gmailUser}>`,
+          to: recipient,
+          subject: subject,
+          html: html
+        });
 
-      return res.json({ success: true, method: 'gmail_smtp' });
+        emailSent = true;
+        methodUsed = 'gmail_smtp';
+      } catch (e) {
+        console.error(`Gmail SMTP delivery failed: ${e.message}`);
+        throw e;
+      }
+    }
+
+    if (emailSent) {
+      return res.json({ success: true, method: methodUsed });
     }
 
     // 3. Fallback: Return simulated success if no credentials entered
@@ -489,6 +509,50 @@ Here is your summary:
 
 To learn more, ask me about your recent transactions, travel spikes, calculations, or founder Siddharth Gopal Dubey.`;
 }
+
+// Helper to load settings from file
+function loadSettings() {
+  const SETTINGS_FILE = path.join(__dirname, 'settings.json');
+  try {
+    if (fs.existsSync(SETTINGS_FILE)) {
+      return JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
+    }
+  } catch (e) {
+    console.error('Error loading settings.json:', e);
+  }
+  return {};
+}
+
+// GET Route to fetch integration settings
+app.get('/api/admin/settings', (req, res) => {
+  const requesterEmail = req.get('x-requester-email') || '';
+  if (requesterEmail.toLowerCase() !== 'clintech0515@gmail.com') {
+    return res.status(403).json({ error: 'Access Denied: Requester is not an authorized administrator.' });
+  }
+
+  const settings = loadSettings();
+  res.json({ success: true, settings });
+});
+
+// POST Route to save integration settings
+app.post('/api/admin/settings', (req, res) => {
+  const requesterEmail = req.get('x-requester-email') || '';
+  if (requesterEmail.toLowerCase() !== 'clintech0515@gmail.com') {
+    return res.status(403).json({ error: 'Access Denied: Requester is not an authorized administrator.' });
+  }
+
+  const { geminiApiKey, gmailUser, gmailAppPassword, resendApiKey } = req.body;
+  const SETTINGS_FILE = path.join(__dirname, 'settings.json');
+  const settings = { geminiApiKey, gmailUser, gmailAppPassword, resendApiKey };
+
+  try {
+    fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2), 'utf8');
+    res.json({ success: true, message: 'System integration settings updated successfully on the server.' });
+  } catch (e) {
+    console.error('Error saving settings.json:', e);
+    res.status(500).json({ error: 'Failed to write settings to database node.' });
+  }
+});
 
 // Start Server
 const PORT = process.env.PORT || 5000;

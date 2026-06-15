@@ -276,6 +276,9 @@ export default function AuthGate({ onAuthenticate }: AuthGateProps) {
         <p style="color: #5f6368; font-size: 13px; line-height: 1.6;">
           You can now return to the login interface, input your email, and enter the passphrase above to re-establish your secure biome session.
         </p>
+        <div style="text-align: center; margin: 25px 0;">
+          <a href="https://clint-terra.vercel.app" style="background-color: #00f0ff; color: #000000; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; font-family: sans-serif; display: inline-block;">Return to Login Panel</a>
+        </div>
         <div style="border-top: 1px solid #dadce0; padding-top: 15px; font-size: 10px; color: #70757a; text-align: center; font-family: monospace; margin-top: 30px;">
           CLiNt Terra was founded and envisioned by Siddharth Gopal Dubey.
         </div>

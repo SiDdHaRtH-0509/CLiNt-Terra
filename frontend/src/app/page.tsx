@@ -301,6 +301,9 @@ export default function Dashboard() {
           <p style="color: #5f6368; font-size: 14px; line-height: 1.6;">
             Your 3D Earth Carbon Spike Globe has loaded. Continue monitoring your carbon index and filling scenario inputs.
           </p>
+          <div style="text-align: center; margin: 25px 0;">
+            <a href="https://clint-terra.vercel.app" style="background-color: #00f0ff; color: #000000; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; font-family: sans-serif; display: inline-block;">Launch Biome Dashboard</a>
+          </div>
           <div style="border-top: 1px solid #dadce0; padding-top: 15px; font-size: 10px; color: #70757a; text-align: center; font-family: monospace; margin-top: 30px;">
             Envisioned by Siddharth Gopal Dubey.
           </div>
@@ -334,6 +337,9 @@ export default function Dashboard() {
           <p style="color: #5f6368; font-size: 14px; line-height: 1.6;">
             As transactions filter through our Apache Kafka event queues, Go workers resolve emissions profiles with Redis semantic caching and Gemini Flash. You can inspect your real-time 3D Earth Carbon Spike Globe on the platform dashboard at any time.
           </p>
+          <div style="text-align: center; margin: 25px 0;">
+            <a href="https://clint-terra.vercel.app" style="background-color: #00f0ff; color: #000000; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; font-family: sans-serif; display: inline-block;">Launch Biome Dashboard</a>
+          </div>
           <div style="border-top: 1px solid #dadce0; padding-top: 15px; font-size: 10px; color: #70757a; text-align: center; font-family: monospace; margin-top: 30px;">
             CLiNt Terra was founded and envisioned by Siddharth Gopal Dubey.
           </div>
@@ -524,6 +530,39 @@ export default function Dashboard() {
       console.warn('Backend admin fetch failed:', e);
     }
 
+    // Fetch integration settings from server to keep inputs in sync
+    try {
+      const backendUrl = getBackendUrl();
+      const res = await fetch(`${backendUrl}/api/admin/settings`, {
+        headers: {
+          'x-requester-email': user.email || ''
+        }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.settings) {
+          if (data.settings.geminiApiKey) {
+            setGeminiKey(data.settings.geminiApiKey);
+            localStorage.setItem('gemini_api_key', data.settings.geminiApiKey);
+          }
+          if (data.settings.gmailUser) {
+            setGmailUser(data.settings.gmailUser);
+            localStorage.setItem('gmail_user', data.settings.gmailUser);
+          }
+          if (data.settings.gmailAppPassword) {
+            setGmailAppPass(data.settings.gmailAppPassword);
+            localStorage.setItem('gmail_app_password', data.settings.gmailAppPassword);
+          }
+          if (data.settings.resendApiKey) {
+            setResendKey(data.settings.resendApiKey);
+            localStorage.setItem('resend_api_key', data.settings.resendApiKey);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to fetch admin settings from server:', e);
+    }
+
     // 2. Fetch from local storage
     try {
       const usersStr = localStorage.getItem('clint_terra_users');
@@ -678,11 +717,32 @@ export default function Dashboard() {
     document.documentElement.classList.toggle('light', nextTheme === 'light');
   };
 
-  const saveSettings = () => {
+  const saveSettings = async () => {
     localStorage.setItem('gemini_api_key', geminiKey);
     localStorage.setItem('gmail_user', gmailUser);
     localStorage.setItem('gmail_app_password', gmailAppPass);
     localStorage.setItem('resend_api_key', resendKey);
+
+    // Synchronize settings with the server database
+    try {
+      const backendUrl = getBackendUrl();
+      await fetch(`${backendUrl}/api/admin/settings`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-requester-email': user.email || ''
+        },
+        body: JSON.stringify({
+          geminiApiKey: geminiKey,
+          gmailUser: gmailUser,
+          gmailAppPassword: gmailAppPass,
+          resendApiKey: resendKey
+        })
+      });
+    } catch (e) {
+      console.error('Failed to save integration settings on server:', e);
+    }
+
     setShowSettings(false);
     // Reload page state
     window.location.reload();
