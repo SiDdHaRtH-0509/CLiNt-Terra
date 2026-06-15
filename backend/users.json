@@ -1,0 +1,18 @@
+[
+  {
+    "name": "CLiNt-Tech Administrator",
+    "email": "CLiNtech0515@gmail.com",
+    "password": "admin1234567",
+    "region": "Asia-Pacific (India)",
+    "profilePic": "https://api.dicebear.com/7.x/bottts/svg?seed=admin",
+    "joinedAt": "2026-06-15T10:53:19.194Z"
+  },
+  {
+    "name": "Siddharth Gopal Dubey",
+    "email": "siddharth@dubey.me",
+    "password": "password",
+    "region": "Asia-Pacific (India)",
+    "profilePic": "https://api.dicebear.com/7.x/bottts/svg?seed=founder",
+    "joinedAt": "2026-06-15T10:53:19.194Z"
+  }
+]

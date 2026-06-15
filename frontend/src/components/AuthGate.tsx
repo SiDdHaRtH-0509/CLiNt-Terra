@@ -37,52 +37,135 @@ export default function AuthGate({ onAuthenticate }: AuthGateProps) {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     if (!email || !password || (!isLogin && !name)) return;
 
     if (typeof window === 'undefined') return;
 
-    const usersStr = localStorage.getItem('clint_terra_users');
-    let users = usersStr ? JSON.parse(usersStr) : [];
+    setLoading(true);
+    setLoadingStage('Establishing link to database node...');
 
-    // Seed founder account if database is empty
-    if (users.length === 0) {
-      users = [
+    let authUser = null;
+    let fallbackToLocal = false;
+
+    // 1. Try backend server auth first
+    try {
+      const backendUrl = getBackendUrl();
+      const endpoint = isLogin ? '/api/auth/login' : '/api/auth/register';
+      const body = isLogin 
+        ? { email, password } 
+        : { name, email, password, region: 'Asia-Pacific (India)', profilePic: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(name)}` };
+
+      const res = await fetch(`${backendUrl}${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Backend Auth failed');
+      }
+
+      authUser = data.user;
+    } catch (e: any) {
+      console.warn('Backend Auth failed or unreachable, trying local fallback:', e.message);
+      
+      // If backend returned a credentials validation error, abort immediately and show error
+      if (e.message && (e.message.includes('passphrase') || e.message.includes('already registered') || e.message.includes('not found') || e.message.includes('Email already'))) {
+        setError(e.message);
+        setLoading(false);
+        return;
+      }
+      
+      fallbackToLocal = true;
+    }
+
+    // 2. Local fallback if backend is unreachable
+    if (fallbackToLocal) {
+      const usersStr = localStorage.getItem('clint_terra_users');
+      let users = usersStr ? JSON.parse(usersStr) : [];
+
+      const seeds = [
+        {
+          name: 'CLiNt-Tech Administrator',
+          email: 'CLiNtech0515@gmail.com',
+          password: 'admin1234567',
+          region: 'Asia-Pacific (India)',
+          profilePic: 'https://api.dicebear.com/7.x/bottts/svg?seed=admin'
+        },
         {
           name: 'Siddharth Gopal Dubey',
           email: 'siddharth@dubey.me',
-          password: 'password'
+          password: 'password',
+          region: 'Asia-Pacific (India)',
+          profilePic: 'https://api.dicebear.com/7.x/bottts/svg?seed=founder'
         }
       ];
-      localStorage.setItem('clint_terra_users', JSON.stringify(users));
+
+      let modified = false;
+      if (users.length === 0) {
+        users = seeds;
+        modified = true;
+      } else {
+        for (const seed of seeds) {
+          const exists = users.some((u: any) => u.email.toLowerCase() === seed.email.toLowerCase());
+          if (!exists) {
+            users.push(seed);
+            modified = true;
+          }
+        }
+      }
+
+      if (modified) {
+        localStorage.setItem('clint_terra_users', JSON.stringify(users));
+      }
+
+      if (isLogin) {
+        const userMatch = users.find((u: any) => u.email.toLowerCase() === email.toLowerCase());
+        if (!userMatch) {
+          setError("Account not found. Please switch to the 'Synchronize Biome' tab to create your account first.");
+          setLoading(false);
+          return;
+        }
+        if (userMatch.password !== password) {
+          setError("Invalid passphrase. Cryptographic handshake rejected.");
+          setLoading(false);
+          return;
+        }
+        authUser = userMatch;
+      } else {
+        const userMatch = users.find((u: any) => u.email.toLowerCase() === email.toLowerCase());
+        if (userMatch) {
+          setError("This email is already registered. Please switch to the 'Access Twin Ledger' tab to log in.");
+          setLoading(false);
+          return;
+        }
+
+        const newUser = { 
+          name, 
+          email, 
+          password, 
+          region: 'Asia-Pacific (India)', 
+          profilePic: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(name)}` 
+        };
+        users.push(newUser);
+        localStorage.setItem('clint_terra_users', JSON.stringify(users));
+        authUser = newUser;
+      }
     }
 
-    if (isLogin) {
-      const userMatch = users.find((u: any) => u.email.toLowerCase() === email.toLowerCase());
-      if (!userMatch) {
-        setError("Account not found. Please switch to the 'Synchronize Biome' tab to create your account first.");
-        return;
-      }
-      if (userMatch.password !== password) {
-        setError("Invalid passphrase. Cryptographic handshake rejected.");
-        return;
-      }
-    } else {
-      const userMatch = users.find((u: any) => u.email.toLowerCase() === email.toLowerCase());
-      if (userMatch) {
-        setError("This email is already registered. Please switch to the 'Access Twin Ledger' tab to log in.");
-        return;
-      }
-
-      const newUser = { name, email, password };
-      users.push(newUser);
-      localStorage.setItem('clint_terra_users', JSON.stringify(users));
+    if (!authUser) {
+      setError("Cryptographic authentication handshake failed.");
+      setLoading(false);
+      return;
     }
 
-    setLoading(true);
-    
+    // Save active user profile info to localStorage for dashboard retrieval
+    localStorage.setItem('clint_terra_active_user', JSON.stringify(authUser));
+
     // Simulate high-throughput event brokering setup stages
     const stages = isLogin 
       ? [
@@ -107,14 +190,8 @@ export default function AuthGate({ onAuthenticate }: AuthGateProps) {
       } else {
         clearInterval(interval);
         setLoading(false);
-        
-        // Retrieve correct name from registration database
-        const finalUsersStr = localStorage.getItem('clint_terra_users');
-        const finalUsers = finalUsersStr ? JSON.parse(finalUsersStr) : [];
-        const userMatch = finalUsers.find((u: any) => u.email.toLowerCase() === email.toLowerCase());
-        const authName = userMatch ? userMatch.name : name;
 
-        onAuthenticate(authName, email, isLogin);
+        onAuthenticate(authUser.name, authUser.email, isLogin);
         
         // Celebrate sync!
         confetti({
@@ -124,7 +201,7 @@ export default function AuthGate({ onAuthenticate }: AuthGateProps) {
           colors: ['#00ff66', '#00f0ff', '#ffffff']
         });
       }
-    }, 1200);
+    }, 1000);
   };
 
   const handleResetPassword = async (e: React.FormEvent) => {
@@ -138,15 +215,35 @@ export default function AuthGate({ onAuthenticate }: AuthGateProps) {
     const usersStr = localStorage.getItem('clint_terra_users');
     let users = usersStr ? JSON.parse(usersStr) : [];
     
-    // Seed default founder account if empty, to allow resetting founder account password
+    // Seed default accounts if empty, to allow resetting account password
+    const seeds = [
+      {
+        name: 'CLiNt-Tech Administrator',
+        email: 'CLiNtech0515@gmail.com',
+        password: 'admin1234567'
+      },
+      {
+        name: 'Siddharth Gopal Dubey',
+        email: 'siddharth@dubey.me',
+        password: 'password'
+      }
+    ];
+
+    let modified = false;
     if (users.length === 0) {
-      users = [
-        {
-          name: 'Siddharth Gopal Dubey',
-          email: 'siddharth@dubey.me',
-          password: 'password'
+      users = seeds;
+      modified = true;
+    } else {
+      for (const seed of seeds) {
+        const exists = users.some((u: any) => u.email.toLowerCase() === seed.email.toLowerCase());
+        if (!exists) {
+          users.push(seed);
+          modified = true;
         }
-      ];
+      }
+    }
+
+    if (modified) {
       localStorage.setItem('clint_terra_users', JSON.stringify(users));
     }
 

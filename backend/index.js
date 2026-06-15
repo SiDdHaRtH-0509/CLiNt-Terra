@@ -3,8 +3,83 @@ import cors from 'cors';
 import nodemailer from 'nodemailer';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import dotenv from 'dotenv';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 dotenv.config();
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const USERS_FILE = path.join(__dirname, 'users.json');
+
+// Helper to load users from file
+function loadUsers() {
+  let users = [];
+  try {
+    if (fs.existsSync(USERS_FILE)) {
+      const data = fs.readFileSync(USERS_FILE, 'utf8');
+      users = JSON.parse(data);
+    }
+  } catch (e) {
+    console.error('Error loading users.json:', e);
+  }
+  
+  // Default seeds
+  const seeds = [
+    {
+      name: 'CLiNt-Tech Administrator',
+      email: 'CLiNtech0515@gmail.com',
+      password: 'admin1234567',
+      region: 'Asia-Pacific (India)',
+      profilePic: 'https://api.dicebear.com/7.x/bottts/svg?seed=admin',
+      joinedAt: new Date().toISOString()
+    },
+    {
+      name: 'Siddharth Gopal Dubey',
+      email: 'siddharth@dubey.me',
+      password: 'password',
+      region: 'Asia-Pacific (India)',
+      profilePic: 'https://api.dicebear.com/7.x/bottts/svg?seed=founder',
+      joinedAt: new Date().toISOString()
+    }
+  ];
+
+  let modified = false;
+  if (users.length === 0) {
+    users = seeds;
+    modified = true;
+  } else {
+    for (const seed of seeds) {
+      const exists = users.some(u => u.email.toLowerCase() === seed.email.toLowerCase());
+      if (!exists) {
+        users.push(seed);
+        modified = true;
+      }
+    }
+  }
+
+  if (modified) {
+    try {
+      fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2), 'utf8');
+    } catch (e) {
+      console.error('Error saving users.json:', e);
+    }
+  }
+
+  return users;
+}
+
+// Helper to save users to file
+function saveUsers(usersList) {
+  try {
+    fs.writeFileSync(USERS_FILE, JSON.stringify(usersList, null, 2), 'utf8');
+  } catch (e) {
+    console.error('Error saving users.json:', e);
+  }
+}
+
+let serverUsers = loadUsers();
 
 const app = express();
 
@@ -24,6 +99,120 @@ app.get('/', (req, res) => {
     geminiActive: !!process.env.GEMINI_API_KEY,
     emailActive: !!(process.env.RESEND_API_KEY || (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD))
   });
+});
+
+// User Registration Route
+app.post('/api/auth/register', (req, res) => {
+  const { name, email, password, region, profilePic } = req.body;
+  if (!name || !email || !password) {
+    return res.status(400).json({ error: 'Name, email, and password are required' });
+  }
+
+  const existingUser = serverUsers.find(u => u.email.toLowerCase() === email.toLowerCase());
+  if (existingUser) {
+    return res.status(400).json({ error: 'Email already registered' });
+  }
+
+  const newUser = {
+    name,
+    email,
+    password,
+    region: region || 'Global',
+    profilePic: profilePic || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(name)}`,
+    joinedAt: new Date().toISOString()
+  };
+
+  serverUsers.push(newUser);
+  saveUsers(serverUsers);
+
+  res.json({ success: true, user: { name: newUser.name, email: newUser.email, region: newUser.region, profilePic: newUser.profilePic } });
+});
+
+// User Login Route
+app.post('/api/auth/login', (req, res) => {
+  const { email, password } = req.body;
+  if (!email || !password) {
+    return res.status(400).json({ error: 'Email and password are required' });
+  }
+
+  // Reload from file to ensure sync
+  serverUsers = loadUsers();
+
+  const user = serverUsers.find(u => u.email.toLowerCase() === email.toLowerCase());
+  if (!user) {
+    return res.status(400).json({ error: 'Account not found' });
+  }
+
+  if (user.password !== password) {
+    return res.status(400).json({ error: 'Invalid passphrase' });
+  }
+
+  res.json({
+    success: true,
+    user: {
+      name: user.name,
+      email: user.email,
+      region: user.region,
+      profilePic: user.profilePic
+    }
+  });
+});
+
+// Profile Update Route
+app.post('/api/user/update', (req, res) => {
+  const { email, name, newEmail, password, region, profilePic } = req.body;
+  if (!email) {
+    return res.status(400).json({ error: 'Current email is required' });
+  }
+
+  // Reload from file to ensure sync
+  serverUsers = loadUsers();
+
+  const userIndex = serverUsers.findIndex(u => u.email.toLowerCase() === email.toLowerCase());
+  if (userIndex === -1) {
+    return res.status(400).json({ error: 'User not found' });
+  }
+
+  // If email changes, make sure the new email is not taken
+  if (newEmail && newEmail.toLowerCase() !== email.toLowerCase()) {
+    const emailTaken = serverUsers.find(u => u.email.toLowerCase() === newEmail.toLowerCase());
+    if (emailTaken) {
+      return res.status(400).json({ error: 'New email address is already taken' });
+    }
+    serverUsers[userIndex].email = newEmail;
+  }
+
+  if (name) serverUsers[userIndex].name = name;
+  if (password) serverUsers[userIndex].password = password;
+  if (region) serverUsers[userIndex].region = region;
+  if (profilePic) serverUsers[userIndex].profilePic = profilePic;
+
+  saveUsers(serverUsers);
+
+  res.json({
+    success: true,
+    user: {
+      name: serverUsers[userIndex].name,
+      email: serverUsers[userIndex].email,
+      region: serverUsers[userIndex].region,
+      profilePic: serverUsers[userIndex].profilePic
+    }
+  });
+});
+
+// Admin Users List Route
+app.get('/api/admin/users', (req, res) => {
+  const requesterEmail = req.get('x-requester-email') || '';
+  if (requesterEmail.toLowerCase() !== 'clintech0515@gmail.com') {
+    return res.status(403).json({ error: 'Access Denied: Requester is not an authorized administrator.' });
+  }
+
+  // Reload from file to ensure sync
+  serverUsers = loadUsers();
+  
+  // Return users with passwords omitted for security
+  const cleanUsers = serverUsers.map(({ password, ...u }) => u);
+  res.json({ success: true, users: cleanUsers });
 });
 
 // Copilot Chat Route
@@ -59,7 +248,9 @@ INSTRUCTIONS:
 1. When asked about who founded, made, or envisioned CLiNt Terra, explicitly attribute it to Siddharth Gopal Dubey.
 2. Maintain a highly professional, technically precise, and concise terminal-style conversational tone.
 3. Answer questions about carbon calculations using standard science principles and refer to our Go worker/Redis/Gemini pipeline where applicable.
-4. Keep answers under 120 words unless a detailed explanation of formulas is requested.`;
+4. Keep answers under 120 words unless a detailed explanation of formulas is requested.
+5. You MUST answer all questions asked by the user, regardless of whether they are related to sustainability or CLiNt Terra. Do not refuse to answer general knowledge, programming, or other queries.
+6. If the user requests you to reply in, translate to, or write in any other language, you must provide your complete answer in that requested language.`;
 
     if (!genAI) {
       // Offline fallback processing logic

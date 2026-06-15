@@ -31,7 +31,14 @@ import {
   Sliders,
   Database,
   Mail,
-  Key
+  Key,
+  ShieldAlert,
+  User,
+  Globe,
+  Camera,
+  CheckCircle2,
+  AlertCircle,
+  Loader2
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -71,7 +78,22 @@ export default function Dashboard() {
   
   // Authentication State
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [user, setUser] = useState({ name: '', email: '' });
+  const [user, setUser] = useState({ name: '', email: '', region: '', profilePic: '' });
+  const [showProfile, setShowProfile] = useState(false);
+  const [showAdmin, setShowAdmin] = useState(false);
+  const [adminUsers, setAdminUsers] = useState<any[]>([]);
+  const [adminLoading, setAdminLoading] = useState(false);
+
+  // User Profile Form States
+  const [profileName, setProfileName] = useState('');
+  const [profileEmail, setProfileEmail] = useState('');
+  const [profilePassword, setProfilePassword] = useState('');
+  const [profileRegion, setProfileRegion] = useState('');
+  const [profilePicSeed, setProfilePicSeed] = useState('');
+  const [profilePicUrl, setProfilePicUrl] = useState('');
+  const [showProfilePassword, setShowProfilePassword] = useState(false);
+  const [profileMessage, setProfileMessage] = useState({ type: '', text: '' });
+  const [profileUpdating, setProfileUpdating] = useState(false);
 
   // Onboarding Tutorial Tour State
   const [activeStep, setActiveStep] = useState<number>(-1);
@@ -128,7 +150,7 @@ export default function Dashboard() {
     }, 600);
   };
 
-  // Load ledger, stats, theme and credentials on mount
+  // Load ledger, stats, theme, credentials, and user on mount
   useEffect(() => {
     setMounted(true);
     setConnectionTime(new Date().toLocaleTimeString());
@@ -143,6 +165,19 @@ export default function Dashboard() {
     setGmailUser(localStorage.getItem('gmail_user') || '');
     setGmailAppPass(localStorage.getItem('gmail_app_password') || '');
     setResendKey(localStorage.getItem('resend_api_key') || '');
+
+    // Load active user
+    const savedUserStr = localStorage.getItem('clint_terra_active_user');
+    if (savedUserStr) {
+      setUser(JSON.parse(savedUserStr));
+    } else {
+      setUser({
+        name: localStorage.getItem('clint_terra_user_name') || 'Siddharth Gopal Dubey',
+        email: localStorage.getItem('clint_terra_user_email') || 'siddharth@dubey.me',
+        region: 'Asia-Pacific (India)',
+        profilePic: 'https://api.dicebear.com/7.x/bottts/svg?seed=founder'
+      });
+    }
 
     refreshData();
   }, []);
@@ -203,7 +238,17 @@ export default function Dashboard() {
   };
 
   const handleAuth = async (name: string, email: string, isLogin: boolean) => {
-    setUser({ name, email });
+    const savedUserStr = localStorage.getItem('clint_terra_active_user');
+    if (savedUserStr) {
+      setUser(JSON.parse(savedUserStr));
+    } else {
+      setUser({
+        name,
+        email,
+        region: 'Asia-Pacific (India)',
+        profilePic: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(name)}`
+      });
+    }
     setIsAuthenticated(true);
     refreshData();
 
@@ -310,9 +355,184 @@ export default function Dashboard() {
     }
   };
 
+  // Initialize User Profile settings when the modal opens
+  useEffect(() => {
+    if (showProfile && user) {
+      setProfileName(user.name || '');
+      setProfileEmail(user.email || '');
+      setProfilePassword(''); // Keep password empty unless they want to update it
+      setProfileRegion(user.region || 'Asia-Pacific (India)');
+      
+      let seed = 'avatar';
+      if (user.profilePic && user.profilePic.includes('seed=')) {
+        const parts = user.profilePic.split('seed=');
+        if (parts.length > 1) {
+          seed = decodeURIComponent(parts[1].split('&')[0]);
+        }
+      } else if (user.name) {
+        seed = user.name;
+      }
+      setProfilePicSeed(seed);
+      setProfilePicUrl(user.profilePic || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(seed)}`);
+      setProfileMessage({ type: '', text: '' });
+    }
+  }, [showProfile, user]);
+
+  const handleProfileUpdate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user || !user.email) return;
+
+    setProfileUpdating(true);
+    setProfileMessage({ type: '', text: '' });
+
+    const newProfilePic = profilePicUrl || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(profilePicSeed)}`;
+
+    const payload = {
+      email: user.email,
+      name: profileName,
+      newEmail: profileEmail !== user.email ? profileEmail : undefined,
+      password: profilePassword || undefined,
+      region: profileRegion,
+      profilePic: newProfilePic
+    };
+
+    let updatedUser = null;
+    let fallbackToLocal = false;
+
+    try {
+      const backendUrl = getBackendUrl();
+      const res = await fetch(`${backendUrl}/api/user/update`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Server profile update failed');
+      }
+      updatedUser = data.user;
+    } catch (err: any) {
+      console.warn('Backend update failed/offline. Reverting to local storage:', err.message);
+      if (err.message && (err.message.includes('already taken') || err.message.includes('not found') || err.message.includes('New email address is already'))) {
+        setProfileMessage({ type: 'error', text: err.message });
+        setProfileUpdating(false);
+        return;
+      }
+      fallbackToLocal = true;
+    }
+
+    if (fallbackToLocal) {
+      const usersStr = localStorage.getItem('clint_terra_users');
+      let users = usersStr ? JSON.parse(usersStr) : [];
+
+      if (users.length === 0) {
+        users = [
+          {
+            name: 'Siddharth Gopal Dubey',
+            email: 'siddharth@dubey.me',
+            password: 'password',
+            region: 'Asia-Pacific (India)',
+            profilePic: 'https://api.dicebear.com/7.x/bottts/svg?seed=founder'
+          }
+        ];
+      }
+
+      if (payload.newEmail) {
+        const emailTaken = users.find((u: any) => u.email.toLowerCase() === payload.newEmail!.toLowerCase() && u.email.toLowerCase() !== user.email.toLowerCase());
+        if (emailTaken) {
+          setProfileMessage({ type: 'error', text: 'New email address is already taken' });
+          setProfileUpdating(false);
+          return;
+        }
+      }
+
+      const index = users.findIndex((u: any) => u.email.toLowerCase() === user.email.toLowerCase());
+      if (index === -1) {
+        setProfileMessage({ type: 'error', text: 'Local account record not found' });
+        setProfileUpdating(false);
+        return;
+      }
+
+      users[index].name = payload.name;
+      if (payload.newEmail) users[index].email = payload.newEmail;
+      if (payload.password) users[index].password = payload.password;
+      users[index].region = payload.region;
+      users[index].profilePic = payload.profilePic;
+
+      localStorage.setItem('clint_terra_users', JSON.stringify(users));
+
+      updatedUser = {
+        name: users[index].name,
+        email: users[index].email,
+        region: users[index].region,
+        profilePic: users[index].profilePic
+      };
+    }
+
+    if (updatedUser) {
+      setUser(updatedUser);
+      localStorage.setItem('clint_terra_active_user', JSON.stringify(updatedUser));
+      
+      setProfileMessage({ type: 'success', text: 'Profile database records synchronized successfully!' });
+      confetti({
+        particleCount: 40,
+        spread: 40,
+        origin: { y: 0.6 },
+        colors: ['#00ff66', '#ffffff']
+      });
+      
+      setTimeout(() => {
+        setShowProfile(false);
+      }, 1500);
+    } else {
+      setProfileMessage({ type: 'error', text: 'Failed to synchronize profile changes.' });
+    }
+
+    setProfileUpdating(false);
+  };
+
+  const fetchAdminUsers = async () => {
+    setAdminLoading(true);
+    let usersList = null;
+
+    try {
+      const backendUrl = getBackendUrl();
+      const res = await fetch(`${backendUrl}/api/admin/users`, {
+        headers: {
+          'x-requester-email': user.email || ''
+        }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        usersList = data.users;
+      }
+    } catch (e) {
+      console.warn('Backend admin fetch failed, falling back to local users list:', e);
+    }
+
+    if (!usersList) {
+      const usersStr = localStorage.getItem('clint_terra_users');
+      usersList = usersStr ? JSON.parse(usersStr) : [
+        {
+          name: 'Siddharth Gopal Dubey',
+          email: 'siddharth@dubey.me',
+          region: 'Asia-Pacific (India)',
+          profilePic: 'https://api.dicebear.com/7.x/bottts/svg?seed=founder',
+          joinedAt: new Date().toISOString()
+        }
+      ];
+      usersList = usersList.map(({ password, ...u }: any) => u);
+    }
+
+    setAdminUsers(usersList);
+    setAdminLoading(false);
+  };
+
   const handleLogout = () => {
     setIsAuthenticated(false);
-    setUser({ name: '', email: '' });
+    setUser({ name: '', email: '', region: '', profilePic: '' });
+    localStorage.removeItem('clint_terra_active_user');
   };
 
   const toggleTheme = () => {
@@ -386,12 +606,35 @@ export default function Dashboard() {
           </div>
 
           <div className="flex flex-wrap items-center gap-3 text-[10px] font-mono">
-            {/* Operator status */}
-            <div className="px-3 py-1.5 rounded-lg bg-neutral-950 border border-neutral-900 flex items-center gap-2">
-              <ShieldCheck className="w-3.5 h-3.5 text-[var(--neon-blue)]" />
-              <span className="text-neutral-400">OPERATOR:</span>
+            {/* Operator status / Profile Trigger */}
+            <button
+              onClick={() => setShowProfile(true)}
+              className="px-3 py-1.5 rounded-lg bg-neutral-950 hover:bg-neutral-900 border border-neutral-900 hover:border-neutral-750 flex items-center gap-2 cursor-pointer transition-all hover:scale-[1.02]"
+              title="User Profile Settings"
+            >
+              {user.profilePic ? (
+                <img src={user.profilePic} alt="Avatar" className="w-4 h-4 rounded-full border border-neutral-850 object-cover" />
+              ) : (
+                <ShieldCheck className="w-3.5 h-3.5 text-[var(--neon-blue)]" />
+              )}
+              <span className="text-neutral-450 uppercase text-[9px]">Operator:</span>
               <span className="text-white font-semibold">{user.name || 'S. G. Dubey'}</span>
-            </div>
+            </button>
+
+            {/* Admin Command Deck (visible for admin email only) */}
+            {user.email && user.email.toLowerCase() === 'clintech0515@gmail.com' && (
+              <button
+                onClick={() => {
+                  setShowAdmin(true);
+                  fetchAdminUsers();
+                }}
+                className="px-3 py-1.5 border border-red-900 hover:border-red-650 bg-red-950/20 hover:bg-red-950/45 rounded-lg cursor-pointer transition-all text-red-400 hover:text-red-200 flex items-center gap-1.5 shadow-[0_0_10px_rgba(239,68,68,0.15)] hover:shadow-[0_0_15px_rgba(239,68,68,0.35)] animate-pulse"
+                title="Admin Command Deck"
+              >
+                <ShieldAlert className="w-3.5 h-3.5 text-red-500" />
+                <span>Admin Deck</span>
+              </button>
+            )}
 
             {/* Sync connection status */}
             <div className="px-3 py-1.5 rounded-lg bg-neutral-950 border border-neutral-900 flex items-center gap-2">
@@ -518,6 +761,294 @@ export default function Dashboard() {
                   Save & Apply
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* User Profile Settings Modal */}
+        {showProfile && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in font-mono">
+            <div className="glass-panel w-full max-w-md p-6 bg-neutral-950 border border-neutral-800 shadow-[0_20px_50px_rgba(0,0,0,0.8)] relative">
+              <div className="flex items-center justify-between mb-4 border-b border-neutral-900 pb-3">
+                <div className="flex items-center gap-2">
+                  <User className="w-5 h-5 text-[var(--neon-blue)]" />
+                  <h2 className="text-sm font-bold text-white uppercase tracking-wider">Operator Profile Settings</h2>
+                </div>
+                <button 
+                  onClick={() => setShowProfile(false)}
+                  className="text-neutral-450 hover:text-white cursor-pointer text-xs"
+                >
+                  [ESC]
+                </button>
+              </div>
+
+              {profileMessage.text && (
+                <div className={`p-3 mb-4 rounded border text-xs flex items-center gap-2 ${
+                  profileMessage.type === 'success' 
+                    ? 'border-green-500/20 bg-green-500/5 text-[var(--neon-green)]' 
+                    : 'border-red-500/20 bg-red-500/5 text-[var(--neon-orange)]'
+                }`}>
+                  {profileMessage.type === 'success' ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
+                  <span>{profileMessage.text}</span>
+                </div>
+              )}
+
+              <form onSubmit={handleProfileUpdate} className="space-y-4 text-xs">
+                {/* Profile Pic customizer */}
+                <div className="flex items-center gap-4 bg-neutral-900/40 p-3 rounded-lg border border-neutral-900">
+                  <div className="relative group">
+                    <img 
+                      src={profilePicUrl || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(profilePicSeed)}`} 
+                      alt="Profile Avatar" 
+                      className="w-16 h-16 rounded-xl border border-neutral-800 bg-neutral-950 p-1"
+                    />
+                    <div className="absolute inset-0 bg-black/40 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                      <Camera className="w-4 h-4 text-white" />
+                    </div>
+                  </div>
+                  
+                  <div className="flex-1 space-y-1.5">
+                    <label className="text-[9px] text-neutral-450 uppercase font-bold">Avatar Robot Seed</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        placeholder="e.g. founder, matrix, hero"
+                        value={profilePicSeed}
+                        onChange={e => {
+                          setProfilePicSeed(e.target.value);
+                          setProfilePicUrl(''); // clear custom url if they type seed
+                        }}
+                        className="flex-1 px-2.5 py-1.5 bg-neutral-900 border border-neutral-850 focus:border-neutral-750 rounded text-neutral-200 outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const randomSeeds = ['neo', 'cyber', 'sentinel', 'orion', 'titan', 'plasma', 'glitch', 'terra', 'saver'];
+                          const randomSeed = randomSeeds[Math.floor(Math.random() * randomSeeds.length)] + '-' + Math.floor(Math.random() * 100);
+                          setProfilePicSeed(randomSeed);
+                          setProfilePicUrl('');
+                        }}
+                        className="px-2 py-1 bg-neutral-800 hover:bg-neutral-700 border border-neutral-750 rounded text-neutral-300 cursor-pointer"
+                      >
+                        🎲
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Name */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-[9px] text-neutral-450 uppercase font-bold">Full Name</label>
+                  <input
+                    type="text"
+                    required
+                    value={profileName}
+                    onChange={e => setProfileName(e.target.value)}
+                    className="w-full px-3 py-2 bg-neutral-900 border border-neutral-850 focus:border-neutral-750 rounded text-neutral-200 outline-none"
+                  />
+                </div>
+
+                {/* Email Address */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-[9px] text-neutral-450 uppercase font-bold">Email Address</label>
+                  <input
+                    type="email"
+                    required
+                    value={profileEmail}
+                    onChange={e => setProfileEmail(e.target.value)}
+                    className="w-full px-3 py-2 bg-neutral-900 border border-neutral-850 focus:border-neutral-750 rounded text-neutral-200 outline-none"
+                  />
+                </div>
+
+                {/* Password update */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-[9px] text-neutral-450 uppercase font-bold flex justify-between items-center">
+                    <span>Change Passphrase</span>
+                    <span className="text-[8px] text-neutral-500 font-normal">Leave blank to keep current</span>
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showProfilePassword ? 'text' : 'password'}
+                      placeholder="Enter new password..."
+                      value={profilePassword}
+                      onChange={e => setProfilePassword(e.target.value)}
+                      className="w-full pl-3 pr-8 py-2 bg-neutral-900 border border-neutral-850 focus:border-neutral-750 rounded text-neutral-200 outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowProfilePassword(!showProfilePassword)}
+                      className="absolute right-2.5 top-2.5 text-neutral-500 hover:text-neutral-300"
+                    >
+                      {showProfilePassword ? '👁️' : '🔒'}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Region */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-[9px] text-neutral-450 uppercase font-bold flex items-center gap-1">
+                    <Globe className="w-3 h-3 text-[var(--neon-blue)]" /> Geographical Region
+                  </label>
+                  <select
+                    value={profileRegion}
+                    onChange={e => setProfileRegion(e.target.value)}
+                    className="w-full px-3 py-2 bg-neutral-900 border border-neutral-850 focus:border-[#00ff66] rounded text-neutral-200 outline-none"
+                  >
+                    <option value="Asia-Pacific (India)">Asia-Pacific (India)</option>
+                    <option value="North America">North America</option>
+                    <option value="Europe">Europe</option>
+                    <option value="Latin America">Latin America</option>
+                    <option value="Africa">Africa</option>
+                    <option value="Middle East">Middle East</option>
+                  </select>
+                </div>
+
+                {/* Form Buttons */}
+                <div className="flex justify-end gap-2 border-t border-neutral-900 pt-3 mt-4">
+                  <button
+                    type="button"
+                    onClick={() => setShowProfile(false)}
+                    className="px-3 py-1.5 border border-neutral-850 rounded hover:bg-neutral-900 text-neutral-400 hover:text-white cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={profileUpdating}
+                    className="px-4 py-1.5 bg-[#00ff66] hover:bg-[#55ff99] text-black font-semibold rounded cursor-pointer transition-all flex items-center gap-1.5 disabled:opacity-50"
+                  >
+                    {profileUpdating && <Loader2 className="w-3 h-3 animate-spin" />}
+                    Save Changes
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* Admin Command Deck Modal */}
+        {showAdmin && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fade-in font-mono">
+            <div className="glass-panel w-full max-w-4xl p-6 bg-neutral-950 border border-red-900 shadow-[0_20px_50px_rgba(239,68,68,0.15)] relative">
+              <div className="flex items-center justify-between mb-4 border-b border-neutral-900 pb-3">
+                <div className="flex items-center gap-2">
+                  <ShieldAlert className="w-5 h-5 text-red-500 animate-pulse" />
+                  <h2 className="text-sm font-bold text-white uppercase tracking-wider">Admin Command Deck: Core Registry</h2>
+                </div>
+                <button 
+                  onClick={() => setShowAdmin(false)}
+                  className="text-neutral-450 hover:text-white cursor-pointer text-xs"
+                >
+                  [ESC]
+                </button>
+              </div>
+
+              {adminLoading ? (
+                <div className="h-64 flex flex-col items-center justify-center gap-3">
+                  <Loader2 className="w-8 h-8 text-red-500 animate-spin" />
+                  <span className="text-xs text-neutral-400">Loading master registry database packets...</span>
+                </div>
+              ) : (
+                <div className="space-y-6 text-xs">
+                  {/* Top Stats Overview */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="bg-neutral-900/50 p-4 border border-neutral-850 rounded-lg">
+                      <div className="text-neutral-500 text-[10px] uppercase font-bold">Active Operators</div>
+                      <div className="text-2xl font-bold text-white mt-1">{adminUsers.length}</div>
+                      <div className="text-[9px] text-neutral-400 mt-1">Synchronized nodes in the local network cluster.</div>
+                    </div>
+
+                    <div className="bg-neutral-900/50 p-4 border border-neutral-850 rounded-lg md:col-span-2">
+                      <div className="text-neutral-500 text-[10px] uppercase font-bold mb-2">Regional User Distribution</div>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                        {(() => {
+                          const regionCounts: Record<string, number> = {};
+                          adminUsers.forEach(u => {
+                            const r = u.region || 'Global';
+                            regionCounts[r] = (regionCounts[r] || 0) + 1;
+                          });
+                          return Object.entries(regionCounts).map(([region, count]) => {
+                            const pct = Math.round((count / adminUsers.length) * 100);
+                            return (
+                              <div key={region} className="bg-neutral-950 p-2 rounded border border-neutral-900">
+                                <div className="text-[9px] text-neutral-400 truncate">{region}</div>
+                                <div className="flex items-center justify-between mt-1">
+                                  <span className="font-bold text-white">{count} ({pct}%)</span>
+                                </div>
+                                <div className="w-full bg-neutral-900 h-1 rounded-full mt-1.5 overflow-hidden">
+                                  <div 
+                                    style={{ width: `${pct}%` }} 
+                                    className="bg-red-500 h-full rounded-full"
+                                  />
+                                </div>
+                              </div>
+                            );
+                          });
+                        })()}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Registered Users List Table */}
+                  <div className="border border-neutral-850 rounded-lg overflow-hidden bg-neutral-900/30">
+                    <div className="px-4 py-3 bg-neutral-950/80 border-b border-neutral-850 flex justify-between items-center">
+                      <h3 className="font-bold uppercase tracking-wider text-neutral-300">Operator Directory List</h3>
+                      <span className="text-[9px] text-neutral-500">TIMESCALEDB METRIC LOG</span>
+                    </div>
+
+                    <div className="max-h-72 overflow-y-auto">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="bg-neutral-950 text-neutral-400 uppercase text-[9px] border-b border-neutral-850">
+                            <th className="p-3">Operator / Avatar</th>
+                            <th className="p-3">Email Address</th>
+                            <th className="p-3">Region</th>
+                            <th className="p-3">Synchronized On</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-neutral-900">
+                          {adminUsers.map((u, i) => (
+                            <tr key={i} className="hover:bg-neutral-900/20 text-neutral-300 transition-colors">
+                              <td className="p-3 flex items-center gap-2.5">
+                                <img 
+                                  src={u.profilePic || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(u.name || 'avatar')}`} 
+                                  className="w-7 h-7 rounded bg-neutral-950 border border-neutral-850 p-0.5"
+                                  alt=""
+                                />
+                                <div>
+                                  <div className="font-bold text-white">{u.name}</div>
+                                  {u.email === 'siddharth@dubey.me' && (
+                                    <span className="text-[8px] px-1 py-0.5 rounded bg-red-950/30 text-red-400 border border-red-900/30 uppercase font-semibold">Founder</span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="p-3 text-neutral-400 font-mono select-all">{u.email}</td>
+                              <td className="p-3">
+                                <span className="px-2 py-0.5 rounded-full bg-neutral-900 border border-neutral-850 text-neutral-300 text-[10px]">
+                                  {u.region || 'Global'}
+                                </span>
+                              </td>
+                              <td className="p-3 text-neutral-500 font-mono">
+                                {u.joinedAt ? new Date(u.joinedAt).toLocaleString() : 'N/A'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-between items-center border-t border-neutral-900 pt-3">
+                    <span className="text-[9px] text-neutral-500">Security notice: Passphrases are filtered out of all query packet payloads.</span>
+                    <button
+                      onClick={() => setShowAdmin(false)}
+                      className="px-4 py-1.5 bg-red-650 hover:bg-red-500 text-white font-semibold rounded cursor-pointer transition-all"
+                    >
+                      Close Command Deck
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
