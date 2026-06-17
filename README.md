@@ -36,19 +36,37 @@ CLiNt Terra is built to support high-throughput, low-latency data pipelines:
 
 ---
 
-## Key Features
+## Key Features & User Experience
 
-### Operator (User) Experience
-- **3D WebGL Galaxy Biome**: A responsive particle galaxy that visually represents the active grid's health. The galaxy shifts dynamically from glowing green to dark orange-grey as emissions fluctuate.
-- **AI Copilot (CLiNt-Saver)**: A chat assistant powered by Gemini AI that reviews ledger profiles to recommend carbon-saving choices. Features a local heuristic fallback for offline querying.
-- **Carbon Offset Simulator**: Allows users to log offset actions (such as tree planting or methane capture) to test and dynamically reduce their weekly carbon totals.
-- **Regional Grid Intensity**: Recommends energy-saving behaviors tailored to local grid intensity profiles (North America, Europe, or Asia-Pacific).
+### 🌐 Cybernetic Operator (User) Experience
+- **Interactive 3D WebGL Digital Twin Biosphere**: Renders a real-time interactive particle galaxy using React Three Fiber. The twin acts as a direct visual feedback loop of the operator's carbon grid:
+  - **Stable Biome (Green)**: Flourishing glowing green particles when emissions remain under the target budget.
+  - **Decaying Biome (Orange-Grey)**: Smoggy orange particle grid if emissions exceed the allowance.
+- **Floating AI Copilot (CLiNt-Saver)**: A personal sustainability agent powered by Gemini AI. It inspects live transaction logs to offer precise calculations, sustainability suggestions, and inline LaTeX mathematical breakdowns ($GHG = Activity \times Coefficient$). Includes an offline semantic rule-engine fallback.
+- **Financial-Grade Carbon Ingestion Ledger**: Interactive UI tables categorizing GHG emissions from Plaid category feeds, transit logs, and energy grid variables, complete with carbon offset balance calculations.
+- **Interactive Scenario Simulation**: Allows operators to manually trigger mock webhook ingestion packets (Food & Dining, Transit, Household Utilities) or log Carbon Offsets (Reforestation, Agriculture Methane Digester, Wind Infrastructure) to test biome state responses.
+- **Regional Grid Intensity Optimizer**: Adapts recommendations dynamically based on regional grid sensors (North America, Europe, or Asia-Pacific).
 
-### Administrator Center
-- **Secure Command Deck**: A centralized administrative console restricted to the master administrator (`CLiNtech0515@gmail.com`).
-- **Alert Broadcaster**: Allows the administrator to broadcast glowing security alert banners to the top of all active operator dashboards.
-- **User Registry Management**: Provides administrative controls to audit registered operators and revoke/delete credentials dynamically.
-- **Consolidated Key Integrations**: Centralizes server-side integrations (Gmail SMTP and Gemini API key management) inside the secure admin panel rather than exposing credentials globally.
+### 🛡️ Administrator Command Deck
+- **Secure Command Deck Console**: A centralized console restricted to the master administrator (`CLiNtech0515@gmail.com`) for managing active operator nodes.
+- **Real-Time Alert Broadcaster**: Allows the administrator to broadcast high-visibility security alert banners to all user dashboards.
+- **User Registry Controls**: Enables administrators to audit operator accounts and revoke/delete credentials dynamically.
+- **Consolidated Server-Side Integration Settings**: Synchronizes Gmail SMTP credentials and Gemini API configurations securely on the server (`settings.json` fallback or MongoDB Atlas), preventing key exposures in client-side code.
+
+---
+
+## Production-Grade Security Hardening
+
+CLiNt Terra is hardened against critical security vulnerabilities using enterprise-grade defense-in-depth principles:
+
+1. **Native Token-Based JWT Authentication**: Uses a custom, zero-dependency token signing and verification engine built on Node's native `crypto` module (preventing supply-chain package vulnerability vectors). Administrative actions and profile updates require a short-lived (2-hour expiry) Bearer JWT.
+2. **ReDoS & Backtracking Protection**: Normalizes all email query strings to lowercase and performs exact string equality matching on MongoDB queries (`{ email: email.toLowerCase() }`), completely avoiding dynamic RegExp object compilation.
+3. **NoSQL Injection Defenses**: Explicitly type-casts all incoming parameters to string primitives and filters control characters. Checks input structure via strict email format validation.
+4. **Input Sanitization & Pastejacking Countermeasures**: Cleans name, email, passphrase, settings, and chat fields on both the client and server sides to strip control characters (ASCII 0-31 and 127) and prevent shell script injections.
+5. **Large Payload DoS Mitigation**: Implements strict 20KB body size limits on Express body parsers to prevent Out-of-Memory (OOM) server exhaustion crashes.
+6. **XSS & Template Injection (SSTI) Defenses**: Automatically HTML-escapes all dynamic parameters interpolated into welcome, login, and recovery email HTML bodies.
+7. **Secure Key and Data Lifecycle**: Generates a runtime-random, cryptographically secure 256-bit signing key on boot (unless overridden by env). Passwords are completely omitted from all API query payloads.
+8. **Enforced Input Constraints**: Enforces length boundaries on user profile fields on both frontend and backend (Name: 2-50 characters, Passphrase: 8-128 characters, Email: max 254 characters).
 
 ---
 

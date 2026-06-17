@@ -17,6 +17,10 @@ interface ChatMessage {
 }
 
 export default function ClintSaver({ stats, ledger }: ClintSaverProps) {
+  const cleanInputText = (val: string): string => {
+    return val.replace(/[\x00-\x1F\x7F]/g, '');
+  };
+
   const [isOpen, setIsOpen] = useState(false);
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -323,7 +327,7 @@ export default function ClintSaver({ stats, ledger }: ClintSaverProps) {
               type="text"
               placeholder="Ask CLiNt-Saver anything..."
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => setInput(cleanInputText(e.target.value))}
               onKeyDown={(e) => e.key === 'Enter' && handleSend()}
               className="flex-1 px-3 py-2 text-xs clint-input rounded-lg outline-none transition-all placeholder-neutral-500"
             />

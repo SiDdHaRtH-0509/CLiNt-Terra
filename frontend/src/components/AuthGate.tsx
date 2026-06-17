@@ -12,6 +12,20 @@ interface AuthGateProps {
 }
 
 export default function AuthGate({ onAuthenticate }: AuthGateProps) {
+  const escapeHtml = (unsafe: string): string => {
+    if (!unsafe) return '';
+    return unsafe
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  };
+
+  const cleanInputText = (val: string): string => {
+    return val.replace(/[\x00-\x1F\x7F]/g, '');
+  };
+
   const getBackendUrl = () => {
     if (process.env.NEXT_PUBLIC_BACKEND_URL) {
       return process.env.NEXT_PUBLIC_BACKEND_URL;
@@ -43,6 +57,21 @@ export default function AuthGate({ onAuthenticate }: AuthGateProps) {
     setError('');
     if (!email || !password || (!isLogin && !name)) return;
 
+    if (!isLogin) {
+      if (name.length < 2 || name.length > 50) {
+        setError('Name must be between 2 and 50 characters.');
+        return;
+      }
+      if (password.length < 8 || password.length > 128) {
+        setError('Passphrase must be between 8 and 128 characters.');
+        return;
+      }
+    }
+    if (email.length > 254) {
+      setError('Email address length exceeded (maximum 254 characters).');
+      return;
+    }
+
     if (typeof window === 'undefined') return;
 
     setLoading(true);
@@ -71,6 +100,9 @@ export default function AuthGate({ onAuthenticate }: AuthGateProps) {
       }
 
       authUser = data.user;
+      if (data.token) {
+        localStorage.setItem('clint_token', data.token);
+      }
     } catch (e: any) {
       console.warn('Backend Auth failed or unreachable, trying local fallback:', e.message);
       
@@ -266,12 +298,12 @@ export default function AuthGate({ onAuthenticate }: AuthGateProps) {
         </div>
         <h1 style="color: #202124; font-size: 20px; margin-bottom: 10px; font-weight: bold;">Passphrase Recovery Request</h1>
         <p style="color: #5f6368; font-size: 14px; line-height: 1.6;">
-          Hello ${userMatch.name},<br/><br/>
+          Hello ${escapeHtml(userMatch.name)},<br/><br/>
           A passphrase recovery request was triggered for your CLiNt Terra carbon account.
         </p>
         <div style="background-color: #ffffff; border: 1px solid #dadce0; padding: 15px; border-radius: 8px; margin: 20px 0; font-family: monospace; font-size: 12px; text-align: center;">
           <span style="color: #5f6368; display: block; margin-bottom: 5px; text-transform: uppercase; font-size: 10px;">Your Registered Passphrase:</span>
-          <strong style="color: #d93025; font-size: 18px; letter-spacing: 1px;">${userMatch.password}</strong>
+          <strong style="color: #d93025; font-size: 18px; letter-spacing: 1px;">${escapeHtml(userMatch.password)}</strong>
         </div>
         <p style="color: #5f6368; font-size: 13px; line-height: 1.6;">
           You can now return to the login interface, input your email, and enter the passphrase above to re-establish your secure biome session.
@@ -395,7 +427,7 @@ export default function AuthGate({ onAuthenticate }: AuthGateProps) {
                   type="email"
                   placeholder="name@domain.com"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(e) => setEmail(cleanInputText(e.target.value))}
                   required
                   className="w-full pl-9 pr-4 py-2 text-xs font-mono bg-neutral-950/80 border border-neutral-900 focus:border-neutral-800 rounded-lg text-neutral-200 outline-none transition-all"
                 />
@@ -469,7 +501,7 @@ export default function AuthGate({ onAuthenticate }: AuthGateProps) {
                       type="text"
                       placeholder="e.g. Siddharth Gopal Dubey"
                       value={name}
-                      onChange={(e) => setName(e.target.value)}
+                      onChange={(e) => setName(cleanInputText(e.target.value))}
                       required={!isLogin}
                       className="w-full pl-9 pr-4 py-2 text-xs font-mono bg-neutral-950/80 border border-neutral-900 focus:border-neutral-800 rounded-lg text-neutral-200 outline-none transition-all"
                     />
@@ -486,7 +518,7 @@ export default function AuthGate({ onAuthenticate }: AuthGateProps) {
                     type="email"
                     placeholder="name@domain.com"
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    onChange={(e) => setEmail(cleanInputText(e.target.value))}
                     required
                     className="w-full pl-9 pr-4 py-2 text-xs font-mono bg-neutral-950/80 border border-neutral-900 focus:border-neutral-800 rounded-lg text-neutral-200 outline-none transition-all"
                   />
@@ -502,7 +534,7 @@ export default function AuthGate({ onAuthenticate }: AuthGateProps) {
                     type={showPassword ? 'text' : 'password'}
                     placeholder="••••••••"
                     value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    onChange={(e) => setPassword(cleanInputText(e.target.value))}
                     required
                     className="w-full pl-9 pr-10 py-2 text-xs font-mono bg-neutral-950/80 border border-neutral-900 focus:border-neutral-800 rounded-lg text-neutral-200 outline-none transition-all"
                   />

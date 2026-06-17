@@ -7,6 +7,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
+import crypto from 'crypto';
 
 dotenv.config();
 
@@ -149,28 +150,159 @@ async function registerNewUser(userObj) {
   }
 }
 
+// Security Helper Functions
+function cleanStringInput(val) {
+  if (val === undefined || val === null) return '';
+  return String(val).replace(/[\x00-\x1F\x7F]/g, '').trim();
+}
+
+function validateEmail(email) {
+  const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+  return emailRegex.test(email);
+}
+
+function escapeHtml(unsafe) {
+  if (typeof unsafe !== 'string') return unsafe;
+  return unsafe
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+// Native JWT Authentication (Zero-dependency custom implementation)
+const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(32).toString('hex');
+
+function base64UrlEncode(str) {
+  return Buffer.from(str)
+    .toString('base64')
+    .replace(/=/g, '')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_');
+}
+
+function base64UrlDecode(str) {
+  let base64 = str.replace(/-/g, '+').replace(/_/g, '/');
+  while (base64.length % 4) {
+    base64 += '=';
+  }
+  return Buffer.from(base64, 'base64').toString('utf8');
+}
+
+function signToken(payload, expiresIn = '2h') {
+  const header = { alg: 'HS256', typ: 'JWT' };
+  const now = Math.floor(Date.now() / 1000);
+  const exp = now + 2 * 3600; // 2 hours
+  
+  const fullPayload = {
+    ...payload,
+    iat: now,
+    exp: exp
+  };
+  
+  const encodedHeader = base64UrlEncode(JSON.stringify(header));
+  const encodedPayload = base64UrlEncode(JSON.stringify(fullPayload));
+  
+  const signature = crypto
+    .createHmac('sha256', JWT_SECRET)
+    .update(`${encodedHeader}.${encodedPayload}`)
+    .digest('base64')
+    .replace(/=/g, '')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_');
+    
+  return `${encodedHeader}.${encodedPayload}.${signature}`;
+}
+
+function verifyToken(token) {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    
+    const [encodedHeader, encodedPayload, signature] = parts;
+    const expectedSignature = crypto
+      .createHmac('sha256', JWT_SECRET)
+      .update(`${encodedHeader}.${encodedPayload}`)
+      .digest('base64')
+      .replace(/=/g, '')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_');
+      
+    if (signature !== expectedSignature) return null;
+    
+    const payload = JSON.parse(base64UrlDecode(encodedPayload));
+    const now = Math.floor(Date.now() / 1000);
+    if (payload.exp && now > payload.exp) return null;
+    
+    return payload;
+  } catch (e) {
+    return null;
+  }
+}
+
+// Authentication Middlewares
+function authenticateToken(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+  
+  if (!token) {
+    return res.status(401).json({ error: 'Access Denied: Authentication token is required.' });
+  }
+  
+  const decoded = verifyToken(token);
+  if (!decoded) {
+    return res.status(401).json({ error: 'Session Expired or Invalid Token.' });
+  }
+  
+  req.user = decoded;
+  next();
+}
+
+function requireAdmin(req, res, next) {
+  if (!req.user || !req.user.email || req.user.email.toLowerCase() !== 'clintech0515@gmail.com') {
+    return res.status(403).json({ error: 'Access Denied: Requester is not an authorized administrator.' });
+  }
+  next();
+}
+
 async function deleteStoredUser(email) {
+  const cleanEmail = cleanStringInput(email).toLowerCase();
   if (isMongoConnected) {
     try {
-      await MongoUser.deleteOne({ email: { $regex: new RegExp(`^${email}$`, 'i') } });
+      await MongoUser.deleteOne({ email: cleanEmail });
       return true;
     } catch (e) {
       console.error('Failed to delete MongoDB user:', e);
       throw e;
     }
   } else {
-    serverUsers = loadUsers().filter(u => u.email.toLowerCase() !== email.toLowerCase());
+    serverUsers = loadUsers().filter(u => u.email.toLowerCase() !== cleanEmail);
     saveUsers(serverUsers);
     return true;
   }
 }
 
 async function updateStoredUser(email, updateFields) {
+  const cleanEmail = cleanStringInput(email).toLowerCase();
+  const cleanUpdates = {};
+  if (updateFields.name) cleanUpdates.name = cleanStringInput(updateFields.name);
+  if (updateFields.email) {
+    const newEmail = cleanStringInput(updateFields.email).toLowerCase();
+    if (!validateEmail(newEmail)) {
+      throw new Error('Invalid email address format');
+    }
+    cleanUpdates.email = newEmail;
+  }
+  if (updateFields.password) cleanUpdates.password = cleanStringInput(updateFields.password);
+  if (updateFields.region) cleanUpdates.region = cleanStringInput(updateFields.region);
+  if (updateFields.profilePic) cleanUpdates.profilePic = cleanStringInput(updateFields.profilePic);
+
   if (isMongoConnected) {
     try {
       const updated = await MongoUser.findOneAndUpdate(
-        { email: { $regex: new RegExp(`^${email}$`, 'i') } },
-        { $set: updateFields },
+        { email: cleanEmail },
+        { $set: cleanUpdates },
         { new: true }
       );
       return updated ? updated.toObject() : null;
@@ -180,14 +312,14 @@ async function updateStoredUser(email, updateFields) {
     }
   } else {
     serverUsers = loadUsers();
-    const idx = serverUsers.findIndex(u => u.email.toLowerCase() === email.toLowerCase());
+    const idx = serverUsers.findIndex(u => u.email.toLowerCase() === cleanEmail);
     if (idx === -1) return null;
     
-    if (updateFields.email) serverUsers[idx].email = updateFields.email;
-    if (updateFields.name) serverUsers[idx].name = updateFields.name;
-    if (updateFields.password) serverUsers[idx].password = updateFields.password;
-    if (updateFields.region) serverUsers[idx].region = updateFields.region;
-    if (updateFields.profilePic) serverUsers[idx].profilePic = updateFields.profilePic;
+    if (cleanUpdates.email) serverUsers[idx].email = cleanUpdates.email;
+    if (cleanUpdates.name) serverUsers[idx].name = cleanUpdates.name;
+    if (cleanUpdates.password) serverUsers[idx].password = cleanUpdates.password;
+    if (cleanUpdates.region) serverUsers[idx].region = cleanUpdates.region;
+    if (cleanUpdates.profilePic) serverUsers[idx].profilePic = cleanUpdates.profilePic;
     
     saveUsers(serverUsers);
     return serverUsers[idx];
@@ -231,7 +363,8 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key', 'x-requester-email']
 }));
-app.use(express.json());
+app.use(express.json({ limit: '20kb' }));
+app.use(express.urlencoded({ limit: '20kb', extended: true }));
 
 // Health Check Route
 app.get('/', (req, res) => {
@@ -246,14 +379,31 @@ app.get('/', (req, res) => {
 
 // User Registration Route
 app.post('/api/auth/register', async (req, res) => {
-  const { name, email, password, region, profilePic } = req.body;
+  const name = cleanStringInput(req.body.name);
+  const email = cleanStringInput(req.body.email).toLowerCase();
+  const password = cleanStringInput(req.body.password);
+  const region = cleanStringInput(req.body.region);
+  const profilePic = cleanStringInput(req.body.profilePic);
+
   if (!name || !email || !password) {
     return res.status(400).json({ error: 'Name, email, and password are required' });
   }
 
+  if (name.length < 2 || name.length > 50) {
+    return res.status(400).json({ error: 'Name must be between 2 and 50 characters.' });
+  }
+
+  if (email.length > 254 || !validateEmail(email)) {
+    return res.status(400).json({ error: 'Invalid email address format or length exceeded (maximum 254 characters).' });
+  }
+
+  if (password.length < 8 || password.length > 128) {
+    return res.status(400).json({ error: 'Passphrase must be between 8 and 128 characters.' });
+  }
+
   try {
     const users = await getStoredUsers();
-    const existingUser = users.find(u => u.email.toLowerCase() === email.toLowerCase());
+    const existingUser = users.find(u => u.email.toLowerCase() === email);
     if (existingUser) {
       return res.status(400).json({ error: 'Email already registered' });
     }
@@ -268,7 +418,17 @@ app.post('/api/auth/register', async (req, res) => {
     };
 
     const savedUser = await registerNewUser(newUser);
-    res.json({ success: true, user: { name: savedUser.name, email: savedUser.email, region: savedUser.region, profilePic: savedUser.profilePic } });
+    const token = signToken({ name: savedUser.name, email: savedUser.email });
+    res.json({ 
+      success: true, 
+      token,
+      user: { 
+        name: savedUser.name, 
+        email: savedUser.email, 
+        region: savedUser.region, 
+        profilePic: savedUser.profilePic 
+      } 
+    });
   } catch (e) {
     res.status(500).json({ error: 'Failed to write operator node registry: ' + e.message });
   }
@@ -276,14 +436,16 @@ app.post('/api/auth/register', async (req, res) => {
 
 // User Login Route
 app.post('/api/auth/login', async (req, res) => {
-  const { email, password } = req.body;
+  const email = cleanStringInput(req.body.email).toLowerCase();
+  const password = cleanStringInput(req.body.password);
+
   if (!email || !password) {
     return res.status(400).json({ error: 'Email and password are required' });
   }
 
   try {
     const users = await getStoredUsers();
-    const user = users.find(u => u.email.toLowerCase() === email.toLowerCase());
+    const user = users.find(u => u.email.toLowerCase() === email);
     if (!user) {
       return res.status(400).json({ error: 'Account not found' });
     }
@@ -292,8 +454,10 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(400).json({ error: 'Invalid passphrase' });
     }
 
+    const token = signToken({ name: user.name, email: user.email });
     res.json({
       success: true,
+      token,
       user: {
         name: user.name,
         email: user.email,
@@ -307,21 +471,35 @@ app.post('/api/auth/login', async (req, res) => {
 });
 
 // Profile Update Route
-app.post('/api/user/update', async (req, res) => {
-  const { email, name, newEmail, password, region, profilePic } = req.body;
-  if (!email) {
-    return res.status(400).json({ error: 'Current email is required' });
+app.post('/api/user/update', authenticateToken, async (req, res) => {
+  const email = req.user.email; // From JWT payload
+  const name = cleanStringInput(req.body.name);
+  const newEmail = cleanStringInput(req.body.newEmail).toLowerCase();
+  const password = cleanStringInput(req.body.password);
+  const region = cleanStringInput(req.body.region);
+  const profilePic = cleanStringInput(req.body.profilePic);
+
+  if (name && (name.length < 2 || name.length > 50)) {
+    return res.status(400).json({ error: 'Name must be between 2 and 50 characters.' });
+  }
+
+  if (newEmail && (newEmail.length > 254 || !validateEmail(newEmail))) {
+    return res.status(400).json({ error: 'Invalid new email address format or length exceeded (maximum 254 characters).' });
+  }
+
+  if (password && (password.length < 8 || password.length > 128)) {
+    return res.status(400).json({ error: 'Passphrase must be between 8 and 128 characters.' });
   }
 
   try {
     const users = await getStoredUsers();
-    const user = users.find(u => u.email.toLowerCase() === email.toLowerCase());
+    const user = users.find(u => u.email.toLowerCase() === email);
     if (!user) {
       return res.status(400).json({ error: 'User not found' });
     }
 
-    if (newEmail && newEmail.toLowerCase() !== email.toLowerCase()) {
-      const emailTaken = users.find(u => u.email.toLowerCase() === newEmail.toLowerCase());
+    if (newEmail && newEmail !== email) {
+      const emailTaken = users.find(u => u.email.toLowerCase() === newEmail);
       if (emailTaken) {
         return res.status(400).json({ error: 'New email address is already taken' });
       }
@@ -335,8 +513,11 @@ app.post('/api/user/update', async (req, res) => {
     if (profilePic) updates.profilePic = profilePic;
 
     const updatedUser = await updateStoredUser(email, updates);
+    const token = signToken({ name: updatedUser.name, email: updatedUser.email });
+
     res.json({
       success: true,
+      token,
       user: {
         name: updatedUser.name,
         email: updatedUser.email,
@@ -350,12 +531,7 @@ app.post('/api/user/update', async (req, res) => {
 });
 
 // Admin Users List Route
-app.get('/api/admin/users', async (req, res) => {
-  const requesterEmail = req.get('x-requester-email') || '';
-  if (requesterEmail.toLowerCase() !== 'clintech0515@gmail.com') {
-    return res.status(403).json({ error: 'Access Denied: Requester is not an authorized administrator.' });
-  }
-
+app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const users = await getStoredUsers();
     const cleanUsers = users.map(({ password, ...u }) => u);
@@ -366,18 +542,13 @@ app.get('/api/admin/users', async (req, res) => {
 });
 
 // Admin User Revocation Route
-app.post('/api/admin/user/delete', async (req, res) => {
-  const requesterEmail = req.get('x-requester-email') || '';
-  if (requesterEmail.toLowerCase() !== 'clintech0515@gmail.com') {
-    return res.status(403).json({ error: 'Access Denied: Requester is not an authorized administrator.' });
-  }
-
-  const { emailToDelete } = req.body;
+app.post('/api/admin/user/delete', authenticateToken, requireAdmin, async (req, res) => {
+  const emailToDelete = cleanStringInput(req.body.emailToDelete).toLowerCase();
   if (!emailToDelete) {
     return res.status(400).json({ error: 'Email to delete is required' });
   }
 
-  if (emailToDelete.toLowerCase() === 'clintech0515@gmail.com') {
+  if (emailToDelete === 'clintech0515@gmail.com') {
     return res.status(400).json({ error: 'Cannot revoke master administrator credentials' });
   }
 
@@ -449,12 +620,19 @@ INSTRUCTIONS:
 });
 
 // Email Dispatch Route
-app.post('/api/send-email', async (req, res) => {
+app.post('/api/send-email', authenticateToken, async (req, res) => {
   try {
-    const { recipient, subject, html, credentials } = req.body;
+    const recipient = cleanStringInput(req.body.recipient).toLowerCase();
+    const subject = cleanStringInput(req.body.subject);
+    const html = req.body.html;
+    const credentials = req.body.credentials || {};
 
     if (!recipient) {
       return res.status(400).json({ error: 'Recipient is required' });
+    }
+
+    if (!validateEmail(recipient)) {
+      return res.status(400).json({ error: 'Invalid recipient email format' });
     }
 
     const serverSettings = await getStoredSettings();
@@ -683,24 +861,18 @@ function loadSettings() {
 }
 
 // GET Route to fetch integration settings
-app.get('/api/admin/settings', (req, res) => {
-  const requesterEmail = req.get('x-requester-email') || '';
-  if (requesterEmail.toLowerCase() !== 'clintech0515@gmail.com') {
-    return res.status(403).json({ error: 'Access Denied: Requester is not an authorized administrator.' });
-  }
-
+app.get('/api/admin/settings', authenticateToken, requireAdmin, (req, res) => {
   const settings = loadSettings();
   res.json({ success: true, settings });
 });
 
 // POST Route to save integration settings
-app.post('/api/admin/settings', (req, res) => {
-  const requesterEmail = req.get('x-requester-email') || '';
-  if (requesterEmail.toLowerCase() !== 'clintech0515@gmail.com') {
-    return res.status(403).json({ error: 'Access Denied: Requester is not an authorized administrator.' });
-  }
+app.post('/api/admin/settings', authenticateToken, requireAdmin, (req, res) => {
+  const geminiApiKey = cleanStringInput(req.body.geminiApiKey);
+  const gmailUser = cleanStringInput(req.body.gmailUser);
+  const gmailAppPassword = cleanStringInput(req.body.gmailAppPassword);
+  const resendApiKey = cleanStringInput(req.body.resendApiKey);
 
-  const { geminiApiKey, gmailUser, gmailAppPassword, resendApiKey } = req.body;
   const SETTINGS_FILE = path.join(__dirname, 'settings.json');
   const settings = { geminiApiKey, gmailUser, gmailAppPassword, resendApiKey };
 

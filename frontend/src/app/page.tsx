@@ -43,6 +43,20 @@ import {
 import confetti from 'canvas-confetti';
 
 export default function Dashboard() {
+  const escapeHtml = (unsafe: string): string => {
+    if (!unsafe) return '';
+    return unsafe
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  };
+
+  const cleanInputText = (val: string): string => {
+    return val.replace(/[\x00-\x1F\x7F]/g, '');
+  };
+
   const getBackendUrl = () => {
     if (process.env.NEXT_PUBLIC_BACKEND_URL) {
       return process.env.NEXT_PUBLIC_BACKEND_URL;
@@ -196,7 +210,7 @@ export default function Dashboard() {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              'x-requester-email': activeUser.email
+              'Authorization': `Bearer ${localStorage.getItem('clint_token') || ''}`
             },
             body: JSON.stringify({
               geminiApiKey: localGeminiKey,
@@ -305,6 +319,9 @@ export default function Dashboard() {
       ? 'Welcome Back to CLiNt Terra: Passive Carbon Ledger Synced'
       : 'Welcome to CLiNt Terra: Passive Carbon Ledger Active';
 
+    const escapedName = escapeHtml(name);
+    const escapedEmail = escapeHtml(email);
+
     const htmlBody = isLogin
       ? `
         <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 25px; background-color: #f8f9fa; border: 1px solid #dadce0; color: #202124; border-radius: 12px;">
@@ -312,7 +329,7 @@ export default function Dashboard() {
             <h2 style="color: #202124; margin: 0; font-family: sans-serif; font-weight: bold;">CLiNt Terra</h2>
             <span style="font-size: 10px; color: #5f6368; font-family: monospace;">CONNECTION SYNCED</span>
           </div>
-          <h1 style="color: #202124; font-size: 20px; margin-bottom: 10px; font-weight: bold;">Welcome Back to CLiNt Terra, ${name}</h1>
+          <h1 style="color: #202124; font-size: 20px; margin-bottom: 10px; font-weight: bold;">Welcome Back to CLiNt Terra, ${escapedName}</h1>
           <p style="color: #5f6368; font-size: 14px; line-height: 1.6;">
             Your passive carbon event-sourcing network is active and has synchronized telemetry inputs from your Plaid transaction feeds, Google Maps timeline clusters, and HomeAssistant household grid metrics.
           </p>
@@ -320,7 +337,7 @@ export default function Dashboard() {
             <div style="color: #1e8e3e; margin-bottom: 5px; font-weight: bold;">STATUS REPORT:</div>
             <div style="display: flex; justify-content: space-between; padding: 3px 0; border-bottom: 1px solid #f1f3f4;">
               <span style="color: #5f6368;">Active Operator:</span>
-              <span style="color: #202124; font-weight: bold;">${name}</span>
+              <span style="color: #202124; font-weight: bold;">${escapedName}</span>
             </div>
             <div style="display: flex; justify-content: space-between; padding: 3px 0;">
               <span style="color: #5f6368;">Sync Status:</span>
@@ -346,7 +363,7 @@ export default function Dashboard() {
           </div>
           <h1 style="color: #202124; font-size: 20px; margin-bottom: 10px; font-weight: bold;">Your Passive Carbon Event-Sourcing Ledger is Active</h1>
           <p style="color: #5f6368; font-size: 14px; line-height: 1.6;">
-            Welcome to CLiNt Terra, ${name}. This next-generation personal sustainability ecosystem maps your digital footprint onto an immutable, high-throughput carbon ledger. The platform runs a passive, zero-input ingestion engine, pulling variables directly from your authorized digital touchpoints.
+            Welcome to CLiNt Terra, ${escapedName}. This next-generation personal sustainability ecosystem maps your digital footprint onto an immutable, high-throughput carbon ledger. The platform runs a passive, zero-input ingestion engine, pulling variables directly from your authorized digital touchpoints.
           </p>
           <div style="background-color: #ffffff; border: 1px solid #dadce0; padding: 15px; border-radius: 8px; margin: 20px 0; font-family: monospace; font-size: 12px;">
             <div style="color: #1e8e3e; margin-bottom: 5px; font-weight: bold;">CONNECTED TELEMETRY INTEGRATIONS:</div>
@@ -384,7 +401,10 @@ export default function Dashboard() {
       const backendUrl = getBackendUrl();
       await fetch(`${backendUrl}/api/send-email`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('clint_token') || ''}`
+        },
         body: JSON.stringify({
           recipient: email,
           subject,
@@ -431,6 +451,24 @@ export default function Dashboard() {
     setProfileUpdating(true);
     setProfileMessage({ type: '', text: '' });
 
+    if (profileName.length < 2 || profileName.length > 50) {
+      setProfileMessage({ type: 'error', text: 'Name must be between 2 and 50 characters.' });
+      setProfileUpdating(false);
+      return;
+    }
+
+    if (profileEmail.length > 254) {
+      setProfileMessage({ type: 'error', text: 'Email address length exceeded (maximum 254 characters).' });
+      setProfileUpdating(false);
+      return;
+    }
+
+    if (profilePassword && (profilePassword.length < 8 || profilePassword.length > 128)) {
+      setProfileMessage({ type: 'error', text: 'Passphrase must be between 8 and 128 characters.' });
+      setProfileUpdating(false);
+      return;
+    }
+
     const newProfilePic = profilePicUrl || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(profilePicSeed)}`;
 
     const payload = {
@@ -449,7 +487,10 @@ export default function Dashboard() {
       const backendUrl = getBackendUrl();
       const res = await fetch(`${backendUrl}/api/user/update`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('clint_token') || ''}`
+        },
         body: JSON.stringify(payload)
       });
 
@@ -458,6 +499,9 @@ export default function Dashboard() {
         throw new Error(data.error || 'Server profile update failed');
       }
       updatedUser = data.user;
+      if (data.token) {
+        localStorage.setItem('clint_token', data.token);
+      }
     } catch (err: any) {
       console.warn('Backend update failed/offline. Reverting to local storage:', err.message);
       if (err.message && (err.message.includes('already taken') || err.message.includes('not found') || err.message.includes('New email address is already'))) {
@@ -548,7 +592,7 @@ export default function Dashboard() {
       const backendUrl = getBackendUrl();
       const res = await fetch(`${backendUrl}/api/admin/users`, {
         headers: {
-          'x-requester-email': user.email || ''
+          'Authorization': `Bearer ${localStorage.getItem('clint_token') || ''}`
         }
       });
       if (res.ok) {
@@ -564,7 +608,7 @@ export default function Dashboard() {
       const backendUrl = getBackendUrl();
       const res = await fetch(`${backendUrl}/api/admin/settings`, {
         headers: {
-          'x-requester-email': user.email || ''
+          'Authorization': `Bearer ${localStorage.getItem('clint_token') || ''}`
         }
       });
       if (res.ok) {
@@ -661,7 +705,7 @@ export default function Dashboard() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-requester-email': user.email || ''
+          'Authorization': `Bearer ${localStorage.getItem('clint_token') || ''}`
         },
         body: JSON.stringify({ emailToDelete })
       });
@@ -737,6 +781,7 @@ export default function Dashboard() {
     setIsAuthenticated(false);
     setUser({ name: '', email: '', region: '', profilePic: '' });
     localStorage.removeItem('clint_terra_active_user');
+    localStorage.removeItem('clint_token');
   };
 
   const toggleTheme = () => {
@@ -759,7 +804,7 @@ export default function Dashboard() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-requester-email': user.email || ''
+          'Authorization': `Bearer ${localStorage.getItem('clint_token') || ''}`
         },
         body: JSON.stringify({
           geminiApiKey: geminiKey,
@@ -1002,7 +1047,7 @@ export default function Dashboard() {
                     type="text"
                     required
                     value={profileName}
-                    onChange={e => setProfileName(e.target.value)}
+                    onChange={e => setProfileName(cleanInputText(e.target.value))}
                     className="w-full px-3 py-2 bg-neutral-900 border border-neutral-850 focus:border-neutral-750 rounded text-neutral-200 outline-none"
                   />
                 </div>
@@ -1014,7 +1059,7 @@ export default function Dashboard() {
                     type="email"
                     required
                     value={profileEmail}
-                    onChange={e => setProfileEmail(e.target.value)}
+                    onChange={e => setProfileEmail(cleanInputText(e.target.value))}
                     className="w-full px-3 py-2 bg-neutral-900 border border-neutral-850 focus:border-neutral-750 rounded text-neutral-200 outline-none"
                   />
                 </div>
@@ -1030,7 +1075,7 @@ export default function Dashboard() {
                       type={showProfilePassword ? 'text' : 'password'}
                       placeholder="Enter new password..."
                       value={profilePassword}
-                      onChange={e => setProfilePassword(e.target.value)}
+                      onChange={e => setProfilePassword(cleanInputText(e.target.value))}
                       className="w-full pl-3 pr-8 py-2 bg-neutral-900 border border-neutral-850 focus:border-neutral-750 rounded text-neutral-200 outline-none"
                     />
                     <button
@@ -1265,7 +1310,7 @@ export default function Dashboard() {
                         type="password"
                         placeholder="Enter GEMINI_API_KEY..."
                         value={geminiKey}
-                        onChange={e => setGeminiKey(e.target.value)}
+                        onChange={e => setGeminiKey(cleanInputText(e.target.value))}
                         className="w-full px-3 py-2 bg-neutral-950 border border-neutral-900 focus:border-neutral-750 rounded text-neutral-200 outline-none placeholder-neutral-700"
                       />
                     </div>
@@ -1282,7 +1327,7 @@ export default function Dashboard() {
                           type="email"
                           placeholder="e.g. operator@gmail.com"
                           value={gmailUser}
-                          onChange={e => setGmailUser(e.target.value)}
+                          onChange={e => setGmailUser(cleanInputText(e.target.value))}
                           className="w-full px-3 py-2 bg-neutral-950 border border-neutral-900 focus:border-neutral-750 rounded text-neutral-200 outline-none placeholder-neutral-700"
                         />
                       </div>
@@ -1293,7 +1338,7 @@ export default function Dashboard() {
                           type="password"
                           placeholder="16-character app password..."
                           value={gmailAppPass}
-                          onChange={e => setGmailAppPass(e.target.value)}
+                          onChange={e => setGmailAppPass(cleanInputText(e.target.value))}
                           className="w-full px-3 py-2 bg-neutral-950 border border-neutral-900 focus:border-neutral-750 rounded text-neutral-200 outline-none placeholder-neutral-700"
                         />
                       </div>
@@ -1306,7 +1351,7 @@ export default function Dashboard() {
                         type="password"
                         placeholder="re_..."
                         value={resendKey}
-                        onChange={e => setResendKey(e.target.value)}
+                        onChange={e => setResendKey(cleanInputText(e.target.value))}
                         className="w-full px-3 py-2 bg-neutral-950 border border-neutral-900 focus:border-neutral-750 rounded text-neutral-200 outline-none placeholder-neutral-700"
                       />
                     </div>
